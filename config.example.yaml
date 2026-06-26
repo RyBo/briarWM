@@ -16,6 +16,8 @@ layout:
   auto_split: longer_edge   # longer_edge | horizontal | vertical
   focus_wraps_monitors: true
   focus_follows_mouse: false
+  move_follows_focus: false   # `move workspace N`: follow the window to that desktop?
+  space_poll_interval: 1.5    # seconds; backstop sweep for drag-to-desktop. 0 disables.
 
 # Named commands for `exec`. Change these to your terminal / launcher.
 exec:
@@ -44,7 +46,8 @@ keybindings:
   "alt+ctrl+v": "preselect vertical"
   "alt+e": "toggle split"
 
-  # sizing
+  # sizing — expands the focused window toward the named direction
+  # (or shrinks it if that side is flush against the screen edge)
   "alt+ctrl+left": "resize left 40"
   "alt+ctrl+right": "resize right 40"
   "alt+ctrl+up": "resize up 40"
@@ -58,6 +61,19 @@ keybindings:
   "alt+space": "focus mode toggle"
   "alt+shift+q": "close"
 
+  # desktops (macOS Spaces): switch to N, or send the focused window to N.
+  # N is 1-based, left → right, among the user desktops of the focused display.
+  "alt+1": "workspace 1"
+  "alt+2": "workspace 2"
+  "alt+3": "workspace 3"
+  "alt+4": "workspace 4"
+  "alt+5": "workspace 5"
+  "alt+shift+1": "move workspace 1"
+  "alt+shift+2": "move workspace 2"
+  "alt+shift+3": "move workspace 3"
+  "alt+shift+4": "move workspace 4"
+  "alt+shift+5": "move workspace 5"
+
   # launching
   "alt+return": "exec terminal"
   "alt+d": "exec launcher"
@@ -67,7 +83,7 @@ keybindings:
   "alt+shift+r": "restart"
   "alt+shift+t": "dump tree"   # logs the focused display's tree
 
-# Modal resize mode: alt+r enters; h/j/k/l resize; escape/return exits.
+# Modal resize mode: alt+r enters; h/j/k/l expand the window toward that side; escape/return exits.
 modes:
   resize:
     "h": "resize left 40"

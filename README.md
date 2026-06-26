@@ -4,15 +4,21 @@ A simple, config-only **BSP tiling window manager for macOS** — i3-gaps/bspwm 
 no SIP disabling, no GUI configuration. Windows auto-tile via binary space partitioning;
 everything is driven by a YAML file and i3-style keybindings.
 
-> Built with the public Accessibility API only (like Amethyst/AeroSpace), so it runs with
-> System Integrity Protection fully enabled.
+> Built on the public Accessibility API (like Amethyst/AeroSpace). Per-desktop tiling
+> additionally uses a few private — but **non-SIP** — CoreGraphics/SkyLight calls to read
+> which macOS Space a window is on, so it still runs with System Integrity Protection fully
+> enabled. If those symbols are ever unavailable, briarWM degrades to one tree per display.
 
 ## Features
 
 - **Automatic BSP tiling** — each new window halves the focused pane; split direction
   follows the longer edge, or your bspwm-style *preselection* (`alt+ctrl+h` / `alt+ctrl+v`).
 - **i3-gaps keybindings** — vim `h/j/k/l` focus, `shift` to move/swap, gaps (inner/outer).
-- **Multi-monitor** — one BSP tree per display; tiles the currently active macOS Space.
+- **Per-desktop layouts** — each macOS Space (desktop) keeps its own independent BSP
+  layout. Move a window to another desktop and the source re-tiles to fill the gap while
+  the destination tiles it to fit. `alt+1…5` switch desktops, `alt+shift+1…5` send the
+  focused window to one.
+- **Multi-monitor** — one BSP tree per (display, desktop); tiles the active Space per display.
 - **Resize** (direct + a modal resize mode), **balance**, **toggle split orientation**,
   **fullscreen (zoom)**, **floating** windows + per-app float rules.
 - **YAML config with hot reload** — edit and save; changes apply instantly.
@@ -59,17 +65,20 @@ make sign      # codesign --force --sign briarWM-dev .build/debug/briarWM
 | move/swap window | `alt+shift+h/j/k/l` |
 | preselect split horizontal / vertical | `alt+ctrl+h` / `alt+ctrl+v` |
 | toggle split orientation | `alt+e` |
-| resize (direct) | `alt+ctrl+arrows` |
-| resize mode (modal) | `alt+r`, then `h/j/k/l`, `escape` to exit |
+| resize (direct) | `alt+ctrl+arrows` (expands the window toward the arrow; shrinks if flush to that screen edge) |
+| resize mode (modal) | `alt+r`, then `h/j/k/l` (expand toward that side), `escape` to exit |
 | balance ratios | `alt+shift+e` |
 | fullscreen (zoom) | `alt+f` |
 | toggle floating | `alt+shift+space` |
 | close window | `alt+shift+q` |
+| switch to desktop 1–5 | `alt+1` … `alt+5` |
+| move window to desktop 1–5 | `alt+shift+1` … `alt+shift+5` |
 | terminal / launcher | `alt+return` / `alt+d` |
 | reload / restart config | `alt+shift+c` / `alt+shift+r` |
 | dump tree to log | `alt+shift+t` |
 
-Switch macOS Spaces with the usual `Ctrl+←/→`; briarWM re-tiles the active one.
+Desktop numbers are 1-based, left → right, among the *user* desktops of the focused display.
+You can still switch with the usual `Ctrl+←/→`; briarWM reconciles and re-tiles either way.
 Change `modifier:` in the config if Alt's dead-key behavior gets in your way.
 
 ## Configuration
@@ -98,7 +107,7 @@ Sources/briarWM/
   AX/        AXClient, AXWindow, AXApplication   # Accessibility wrappers + observers
   Tree/      Orientation, BSPNode, BSPTree       # the BSP data model + algorithms
   Layout/    LayoutEngine, Tiler                 # pure tree→rects, then apply via AX
-  Screen/    ScreenManager, Geometry             # displays + Cocoa↔AX coordinates
+  Screen/    ScreenManager, Geometry, SpacesManager  # displays, coords, private Space APIs
   Hotkey/    HotkeyManager, Keycodes, Keymap     # Carbon global hotkeys + binding parse
   Config/    Config, ConfigLoader, ConfigWatcher # YAML schema, load, hot reload
   Command/   Action, CommandRouter               # command vocabulary + dispatch

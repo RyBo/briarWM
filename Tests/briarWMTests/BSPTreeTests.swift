@@ -86,12 +86,44 @@ import Foundation
             WinID(1): CGRect(x: 0, y: 0, width: 495, height: 800),
             WinID(2): CGRect(x: 505, y: 0, width: 495, height: 800),
         ]
-        t.resize(WinID(1), edge: .right, deltaPx: 100, frames: frames)   // 0.5 -> 0.6 over 1000px
+        // WinID(1) is the first child: growing it (resize right) raises the ratio.
+        t.resize(WinID(1), direction: .right, deltaPx: 100, frames: frames)   // 0.5 -> 0.6 over 1000px
         guard case .split(_, let r, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
         #expect(approx(CGFloat(r), 0.6, 0.01))
-        t.resize(WinID(1), edge: .right, deltaPx: 100_000, frames: frames)
+        t.resize(WinID(1), direction: .right, deltaPx: 100_000, frames: frames)
         guard case .split(_, let r2, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
         #expect(r2 <= 0.95 + 1e-9)        // clamped
+    }
+
+    /// `direction` slides the shared divider that way regardless of which window is
+    /// focused, so either window can move it both ways from itself — no need to switch
+    /// focus to the neighbour. Right -> divider right (ratio up); left -> divider left
+    /// (ratio down). For the left window that means right=expand / left=shrink; for the
+    /// right window (flush to the screen on its right) right=shrink / left=expand.
+    @Test func resizeIsRelativeAndSymmetric() {
+        func freshTree() -> BSPTree {
+            let t = BSPTree(display: 1)
+            t.insert(WinID(1))
+            t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+            return t
+        }
+        // WinID(1) on the left, WinID(2) on the right of a 1000px-wide horizontal split.
+        let frames: [WinID: CGRect] = [
+            WinID(1): CGRect(x: 0, y: 0, width: 495, height: 800),
+            WinID(2): CGRect(x: 505, y: 0, width: 495, height: 800),
+        ]
+        func ratio(_ t: BSPTree) -> CGFloat {
+            guard case .split(_, let r, _, _)? = t.root?.kind else { Issue.record("expected split"); return -1 }
+            return CGFloat(r)
+        }
+
+        // "right" lands on ratio 0.6 from EITHER window; "left" lands on 0.4 from either.
+        for win in [WinID(1), WinID(2)] {
+            let r = freshTree(); r.resize(win, direction: .right, deltaPx: 100, frames: frames)
+            #expect(approx(ratio(r), 0.6, 0.01))   // divider slid right
+            let l = freshTree(); l.resize(win, direction: .left, deltaPx: 100, frames: frames)
+            #expect(approx(ratio(l), 0.4, 0.01))    // divider slid left
+        }
     }
 
     @Test func balanceResetsRatios() {

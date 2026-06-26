@@ -33,7 +33,7 @@ make sign       # self-sign so the Accessibility grant survives rebuilds
 Sources/briarWM/
   Tree/      Orientation, BSPNode, BSPTree   # BSP data model + algorithms  (PURE)
   Layout/    LayoutEngine, Tiler             # LayoutEngine pure; Tiler applies via AX
-  Screen/    Geometry, ScreenManager         # Geometry pure (Cocoa↔AX); ScreenManager = AppKit
+  Screen/    Geometry, ScreenManager, SpacesManager  # Geometry pure; ScreenManager = AppKit; SpacesManager = private CGS
   Hotkey/    Keycodes, Keymap, HotkeyManager # Keycodes/Keymap pure; HotkeyManager = Carbon
   Command/   Action, CommandRouter           # Action pure (parsing); router dispatches
   Config/    Config, ConfigLoader, ConfigWatcher  # Config pure (Decodable); loader = Yams
@@ -52,6 +52,14 @@ Sources/briarWM/
 - **Feedback-loop safety.** When briarWM sets a window's frame it records the desired frame;
   AX move/resize notifications that match it are ignored, others are treated as a user drag
   (snap back). Preserve this when changing tiling.
+- **One tree per Space (desktop).** `WindowManager.trees` is keyed by `SpaceID`; each tree
+  also carries its `display`. The core invariant: **`retile` only applies frames to windows
+  on the *active* Space of their display** (`isActive`) — hidden desktops recompute but never
+  touch AX. `reconcileSpaces()` (driven by Space-change/app-activation notifications and a
+  backstop timer in `AppWatcher`) re-homes windows whose real Space drifted. Space membership
+  comes from `SpacesManager` (private, non-SIP CGS/SkyLight via `dlsym`); when it's
+  unavailable everything falls back to a per-display pseudo-Space = the old behavior. Keep
+  the private API surface confined to `SpacesManager`.
 - **Coordinates:** everything in the tiling path is AX (top-left origin). Convert exactly
   once at the NSScreen boundary via `Geometry`.
 

@@ -9,12 +9,19 @@ enum InsertAt: String {
 /// take a precomputed `frames` map so they stay testable.
 final class BSPTree {
     let display: DisplayID
+    /// The macOS Space (desktop) this tree tiles. Each Space belongs to exactly one
+    /// display, so `(space)` uniquely identifies a tree. Defaults to `0` so existing
+    /// callers/tests that only care about the display compile unchanged.
+    let space: SpaceID
     var root: BSPNode?
     var focused: WinID?
     /// bspwm-style preselection: orientation to use for the *next* insert.
     var preselect: Orientation?
 
-    init(display: DisplayID) { self.display = display }
+    init(display: DisplayID, space: SpaceID = 0) {
+        self.display = display
+        self.space = space
+    }
 
     var isEmpty: Bool { root == nil }
     var windowIDs: [WinID] { root?.leafWindowIDs() ?? [] }
@@ -150,40 +157,50 @@ final class BSPTree {
 
     // MARK: - Resize
 
-    /// Move the focused window's `direction` edge outward by `deltaPx` by adjusting
-    /// the nearest ancestor split on the matching axis with a sibling on that side.
+    /// Resize the focused window relative to itself: `direction` slides the relevant
+    /// divider toward that side, expanding the window that way (`right`/`down` move the
+    /// divider toward +ratio, `left`/`up` toward −ratio). When the window is flush against
+    /// the screen on that side there is nothing to expand into, so the opposite divider is
+    /// pulled in instead and the window shrinks — it still responds. Either way the chosen
+    /// divider moves in `direction`, so opposite directions reverse each other.
     func resize(_ win: WinID,
-                edge direction: Direction,
+                direction: Direction,
                 deltaPx: CGFloat,
                 frames: [WinID: CGRect],
                 minRatio: Double = 0.05) {
         guard let leaf = root?.findLeaf(win) else { return }
         let wantOrientation = direction.orientation
-        // Forward edges (right/down): our subtree must be the FIRST child  -> grow ratio.
-        // Backward edges (left/up):   our subtree must be the SECOND child -> shrink ratio.
-        let wantFirst = (direction == .right || direction == .down)
+        let forward = (direction == .right || direction == .down)  // divider slides toward +ratio
 
+        // Prefer the ancestor split whose divider — sliding toward `direction` — EXPANDS the
+        // focused window (its subtree is on the side that grows). Fall back to the nearest
+        // split where that same motion shrinks it: used when the window is flush to the screen
+        // on `direction`'s side and so cannot expand that way.
+        var expand: BSPNode?
+        var shrink: BSPNode?
         var child: BSPNode = leaf
         var cursor = leaf.parent
         while let n = cursor {
-            if case .split(let o, let r, let a, let b) = n.kind, o == wantOrientation {
+            if case .split(let o, _, let a, _) = n.kind, o == wantOrientation {
                 let isFirst = (a === child)
-                if isFirst == wantFirst {
-                    let rect = boundingRect(of: n, frames: frames)
-                    let extent = (o == .horizontal) ? rect.width : rect.height
-                    if extent > 0 {
-                        let dr = Double(deltaPx) / Double(extent)
-                        let newRatio = wantFirst ? r + dr : r - dr
-                        let clamped = Swift.max(minRatio, Swift.min(1 - minRatio, newRatio))
-                        n.kind = .split(orientation: o, ratio: clamped, first: a, second: b)
-                    }
-                    return
-                }
+                // Sliding the divider toward `direction` grows the first child iff `forward`.
+                if isFirst == forward { if expand == nil { expand = n } }
+                else if shrink == nil { shrink = n }
             }
             child = n
             cursor = n.parent
         }
-        // No suitable split: window is flush against that edge of the screen. No-op.
+
+        guard let target = expand ?? shrink,
+              case .split(let o, let r, let a, let b) = target.kind else {
+            return  // No split on this axis: the window spans the full extent. No-op.
+        }
+        let rect = boundingRect(of: target, frames: frames)
+        let extent = (o == .horizontal) ? rect.width : rect.height
+        guard extent > 0 else { return }
+        let dr = Double(deltaPx) / Double(extent)
+        let clamped = Swift.max(minRatio, Swift.min(1 - minRatio, r + (forward ? dr : -dr)))
+        target.kind = .split(orientation: o, ratio: clamped, first: a, second: b)
     }
 
     private func boundingRect(of node: BSPNode, frames: [WinID: CGRect]) -> CGRect {

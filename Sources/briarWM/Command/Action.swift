@@ -13,6 +13,8 @@ enum Action: Equatable {
     case toggleFloat
     case focusModeToggle
     case close
+    case workspace(Int)        // switch to desktop N (1-based, per the focused display)
+    case moveToWorkspace(Int)  // send the focused window to desktop N (1-based)
     case exec(String)        // an `exec` key (e.g. "terminal") or a raw command
     case reload
     case restart
@@ -40,7 +42,14 @@ extension Action {
 
         case "move":
             if let d = lc.first.flatMap(Direction.init(token:)) { return .move(d) }
+            // i3 dialect: "move workspace N", "move to workspace N", "move container to workspace N".
+            if lc.contains("workspace") || lc.contains("desktop"),
+               let n = lc.compactMap({ Int($0) }).first { return .moveToWorkspace(n) }
             return nil
+
+        case "workspace", "desktop":
+            guard let n = lc.compactMap({ Int($0) }).first else { return nil }
+            return .workspace(n)
 
         case "resize":
             guard let d = lc.first.flatMap(Direction.init(token:)) else { return nil }

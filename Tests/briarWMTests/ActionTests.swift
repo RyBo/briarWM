@@ -29,6 +29,22 @@ import Testing
         #expect(Action.parse("mode default") == .exitMode)
     }
 
+    @Test func workspaceSwitch() {
+        #expect(Action.parse("workspace 3") == .workspace(3))
+        #expect(Action.parse("desktop 1") == .workspace(1))
+        #expect(Action.parse("workspace") == nil)
+        #expect(Action.parse("workspace foo") == nil)
+    }
+
+    @Test func workspaceMove() {
+        #expect(Action.parse("move workspace 2") == .moveToWorkspace(2))
+        #expect(Action.parse("move to workspace 4") == .moveToWorkspace(4))
+        #expect(Action.parse("move container to workspace 5") == .moveToWorkspace(5))
+        // The directional form must still win — not be read as a workspace move.
+        #expect(Action.parse("move left") == .move(.left))
+        #expect(Action.parse("move right") == .move(.right))
+    }
+
     @Test func simpleVerbs() {
         #expect(Action.parse("fullscreen") == .fullscreen)
         #expect(Action.parse("close") == .close)

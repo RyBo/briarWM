@@ -17,6 +17,8 @@ final class CommandRouter {
         case .toggleFloat:        manager.toggleFloatFocused()
         case .focusModeToggle:    manager.focusModeToggle()
         case .close:              manager.closeFocused()
+        case .workspace(let n):       manager.switchToDesktop(n)
+        case .moveToWorkspace(let n): manager.moveFocusedToDesktop(n)
         case .exec(let s):        manager.runExec(s)
         case .reload:             manager.reload()
         case .restart:            manager.restart()

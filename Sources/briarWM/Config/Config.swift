@@ -66,17 +66,28 @@ struct LayoutOptions: Decodable, Equatable {
     var autoSplit: String       // "longer_edge" | "horizontal" | "vertical"
     var focusWrapsMonitors: Bool
     var focusFollowsMouse: Bool
+    /// When true, `move workspace N` follows the window to that desktop. Default false
+    /// (matches i3's "move container to workspace").
+    var moveFollowsFocus: Bool
+    /// Seconds between background reconciliation sweeps that catch windows dragged to
+    /// another desktop without a Space switch (those fire no AX/Space notification).
+    /// `0` disables the backstop. Default 1.5s.
+    var spacePollInterval: Double
 
     init(defaultRatio: Double = 0.5,
          insertAt: String = "after",
          autoSplit: String = "longer_edge",
          focusWrapsMonitors: Bool = true,
-         focusFollowsMouse: Bool = false) {
+         focusFollowsMouse: Bool = false,
+         moveFollowsFocus: Bool = false,
+         spacePollInterval: Double = 1.5) {
         self.defaultRatio = defaultRatio
         self.insertAt = insertAt
         self.autoSplit = autoSplit
         self.focusWrapsMonitors = focusWrapsMonitors
         self.focusFollowsMouse = focusFollowsMouse
+        self.moveFollowsFocus = moveFollowsFocus
+        self.spacePollInterval = spacePollInterval
     }
 
     enum CodingKeys: String, CodingKey {
@@ -85,6 +96,8 @@ struct LayoutOptions: Decodable, Equatable {
         case autoSplit = "auto_split"
         case focusWrapsMonitors = "focus_wraps_monitors"
         case focusFollowsMouse = "focus_follows_mouse"
+        case moveFollowsFocus = "move_follows_focus"
+        case spacePollInterval = "space_poll_interval"
     }
 
     init(from decoder: Decoder) throws {
@@ -94,6 +107,8 @@ struct LayoutOptions: Decodable, Equatable {
         autoSplit = try c.decodeIfPresent(String.self, forKey: .autoSplit) ?? "longer_edge"
         focusWrapsMonitors = try c.decodeIfPresent(Bool.self, forKey: .focusWrapsMonitors) ?? true
         focusFollowsMouse = try c.decodeIfPresent(Bool.self, forKey: .focusFollowsMouse) ?? false
+        moveFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .moveFollowsFocus) ?? false
+        spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? 1.5
     }
 }
 

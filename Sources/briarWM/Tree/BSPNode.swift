@@ -11,6 +11,12 @@ struct WinID: Hashable, CustomStringConvertible {
 /// Mirrors `CGDirectDisplayID` without forcing CoreGraphics on the pure core.
 typealias DisplayID = UInt32
 
+/// A macOS Space (desktop) identifier. Mirrors the private `CGSSpaceID` (64-bit)
+/// without forcing CoreGraphics/SkyLight on the pure core. `0` is the sentinel for
+/// "no Space info" (used as a per-display pseudo-Space when Space queries are
+/// unavailable — see `SpacesManager`).
+typealias SpaceID = UInt64
+
 /// A node in a binary space-partitioning tree.
 /// A class (not an `indirect enum`) with a `weak parent` so removal,
 /// sibling promotion, and upward navigation are cheap.
