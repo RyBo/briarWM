@@ -8,7 +8,10 @@ enum InsertAt: String {
 /// about the Accessibility API. Geometry-dependent operations (focus/resize)
 /// take a precomputed `frames` map so they stay testable.
 final class BSPTree {
-    let display: DisplayID
+    /// The display this tree tiles. Mutable because a parked tree — one whose monitor slept
+    /// or was unplugged — is re-pointed onto the display it returns on, whose
+    /// CGDirectDisplayID may have been reassigned across the reconnection.
+    var display: DisplayID
     /// The macOS Space (desktop) this tree tiles. Each Space belongs to exactly one
     /// display, so `(space)` uniquely identifies a tree. Defaults to `0` so existing
     /// callers/tests that only care about the display compile unchanged.

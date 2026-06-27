@@ -17,6 +17,12 @@ final class WindowManager: AXEventSink {
     /// are unavailable, a per-display pseudo-Space (`pseudoSpace`) reproduces the old
     /// one-tree-per-display behavior.
     private var trees: [SpaceID: BSPTree] = [:]
+    /// Trees whose display vanished (monitor slept / unplugged / undocked). Their structure
+    /// is preserved here — out of `trees`, so they never retile — and restored when the
+    /// display returns (`screensChanged`). Their windows, which macOS relocates to a surviving
+    /// display, are left untiled until then. This trades dormant windows during the outage for
+    /// a faithful layout restore on reconnect, instead of destroying the layout on every blip.
+    private var parkedTrees: [BSPTree] = []
     /// The currently-visible Space on each display. Only trees whose Space is active
     /// have their frames applied to real windows.
     private var activeSpace: [DisplayID: SpaceID] = [:]
@@ -101,14 +107,15 @@ final class WindowManager: AXEventSink {
         guard let axApp = apps[pid] else { return }
         axApp.stop()
         apps.removeValue(forKey: pid)
-        let ids = trees.values.flatMap { $0.windowIDs }.filter { registry.window(for: $0)?.pid == pid }
+        let ids = allTrees.flatMap { $0.windowIDs }.filter { registry.window(for: $0)?.pid == pid }
         var changed: Set<SpaceID> = []
         for id in ids {
-            if let tree = treeContaining(id) { tree.remove(id); changed.insert(tree.space) }
+            if let tree = anyTreeContaining(id) { tree.remove(id); changed.insert(tree.space) }
             registry.unregister(id)
             desiredFrames.removeValue(forKey: id)
         }
-        changed.forEach { if let t = trees[$0] { retile(t) } }
+        parkedTrees.removeAll { $0.isEmpty }                       // drop parked trees emptied by the quit
+        changed.forEach { if let t = trees[$0] { retile(t) } }     // only active trees apply frames
     }
 
     // MARK: - Window adoption / filtering
@@ -174,7 +181,25 @@ final class WindowManager: AXEventSink {
         return tree
     }
 
+    /// Active trees only — what window *commands* (focus/move/resize) operate on. A parked
+    /// tree's windows are dormant and must not be command targets.
     private func treeContaining(_ id: WinID) -> BSPTree? { trees.values.first { $0.contains(id) } }
+
+    /// Active *and* parked trees — for lifecycle cleanup (app quit, window destroyed), which
+    /// must reach a window wherever it lives so closed windows don't leak from a parked tree.
+    private var allTrees: [BSPTree] { Array(trees.values) + parkedTrees }
+    private func anyTreeContaining(_ id: WinID) -> BSPTree? { allTrees.first { $0.contains(id) } }
+
+    /// space → owning display, from the current window-server layout. Empty when Space queries
+    /// are unavailable. Drives both `reconcileSpaces` re-homing and parked-tree restoration.
+    private func spaceDisplayMap() -> [SpaceID: DisplayID] {
+        var map: [SpaceID: DisplayID] = [:]
+        for ds in spaces.displayLayout() {
+            guard let d = ds.displayID else { continue }
+            for s in ds.spaces { map[s.id] = d }
+        }
+        return map
+    }
 
     /// Per-display pseudo-Space used when Space queries are unavailable: stable, unique,
     /// and always treated as active → identical to the old one-tree-per-display behavior.
@@ -255,13 +280,14 @@ final class WindowManager: AXEventSink {
 
     func windowDestroyed(_ element: AXUIElement, pid: pid_t) {
         guard let id = registry.id(for: element) else { return }
-        let tree = treeContaining(id)
+        let tree = anyTreeContaining(id)               // could be parked (its monitor is asleep)
         tree?.remove(id)
         registry.unregister(id)
         desiredFrames.removeValue(forKey: id)
         if zoomedID == id { zoomedID = nil }
         if focusedID == id { focusedID = tree?.focused }
-        if let tree { retile(tree) }
+        parkedTrees.removeAll { $0.isEmpty }
+        if let tree { retile(tree) }                   // no-op for a parked tree (display gone)
     }
 
     func focusChanged(pid: pid_t) {
@@ -289,17 +315,49 @@ final class WindowManager: AXEventSink {
         screens.refresh()
         refreshActiveSpaces()
         let valid = Set(screens.displayIDs)
-        let primary = screens.displayIDs.first ?? 0
-        let primaryTree = ensureTree(space: activeSpace[primary] ?? pseudoSpace(primary), display: primary)
-        // Evacuate trees whose display is gone into the primary's active desktop.
+        guard !valid.isEmpty else { return }   // every display gone (system sleeping): keep trees intact
+
+        // Park trees whose display vanished instead of destroying their layout. They leave
+        // `trees` (so they never retile) and wait in `parkedTrees` for the monitor to return.
         // (Snapshot first — we mutate `trees` in the loop.)
         let orphaned = trees.filter { !valid.contains($0.value.display) }
         for (space, tree) in orphaned {
-            for id in tree.windowIDs { primaryTree.insert(id, focusedFrame: nil) }
             trees.removeValue(forKey: space)
+            parkedTrees.append(tree)
+            Log.logger.debug("park tree space \(space) (display \(tree.display) gone)")
         }
+
+        // Restore parked trees whose display is back (keyed by Space, stable across reconnect).
+        let spaceOwner = spaceDisplayMap()
+        var stillParked: [BSPTree] = []
+        for tree in parkedTrees {
+            guard let display = DisplayReconfig.restoreDisplay(
+                    space: tree.space, originalDisplay: tree.display,
+                    valid: valid, spaceOwner: spaceOwner) else {
+                stillParked.append(tree); continue
+            }
+            restorePark(tree, onto: display)
+        }
+        parkedTrees = stillParked
+
         reconcileSpaces()
         retileAll()
+    }
+
+    /// Reinstate a parked tree on a (re)connected display. Prunes windows that closed while the
+    /// monitor was gone, re-points the tree at `display` (its id may have changed), and folds
+    /// into an existing tree if one already holds the Space. A tree emptied while parked is
+    /// dropped (the caller leaves it out of `parkedTrees`).
+    private func restorePark(_ tree: BSPTree, onto display: DisplayID) {
+        for id in tree.windowIDs where registry.window(for: id) == nil { tree.remove(id) }
+        guard !tree.isEmpty else { return }
+        tree.display = display
+        if let existing = trees[tree.space], existing !== tree {
+            for id in tree.windowIDs { existing.insert(id, focusedFrame: nil) }
+        } else {
+            trees[tree.space] = tree
+        }
+        Log.logger.debug("restore tree space \(tree.space) onto display \(display)")
     }
 
     // MARK: - Hotkeys
@@ -460,12 +518,7 @@ final class WindowManager: AXEventSink {
         guard spaces.isAvailable else { return }
         refreshActiveSpaces()
 
-        // space → owning display, from the current layout.
-        var spaceDisplay: [SpaceID: DisplayID] = [:]
-        for ds in spaces.displayLayout() {
-            guard let d = ds.displayID else { continue }
-            for s in ds.spaces { spaceDisplay[s.id] = d }
-        }
+        let spaceDisplay = spaceDisplayMap()           // space → owning display, current layout
 
         var dirty: Set<SpaceID> = []
         for tree in Array(trees.values) {                 // snapshot: we mutate `trees`
