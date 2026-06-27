@@ -60,6 +60,14 @@ final class AXApplication {
         observer = nil
     }
 
+    /// Attach the per-window notifications (destroyed / moved / resized) to a window adopted
+    /// after `start()` — e.g. one discovered when its Space became active. Safe to call once
+    /// per window; AX ignores duplicate registrations.
+    func observe(window element: AXUIElement) {
+        guard observer != nil else { return }
+        addWindowNotifications(element, refcon: Unmanaged.passUnretained(self).toOpaque())
+    }
+
     private func addWindowNotifications(_ window: AXUIElement, refcon: UnsafeMutableRawPointer) {
         guard let obs = observer else { return }
         for note in Self.windowNotifications {

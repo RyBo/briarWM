@@ -56,6 +56,20 @@ final class WindowManager: AXEventSink {
         }
     }
 
+    /// Adopt standard windows that exist but aren't tracked yet — typically windows that
+    /// lived on a non-active Space when briarWM launched (AX's per-app window list omits
+    /// off-Space windows, so the startup scan never saw them) and only became enumerable
+    /// once their desktop was activated. Idempotent and cheap; runs on the reconcile
+    /// cadence. Never steals focus (`considerWindow` defaults `focus: false`).
+    private func discoverWindows() {
+        for (pid, app) in apps {
+            for element in app.windows() where registry.id(for: element) == nil {
+                considerWindow(element, pid: pid, retile: true)
+                if registry.id(for: element) != nil { app.observe(window: element) }
+            }
+        }
+    }
+
     // MARK: - App tracking
 
     func addApp(pid: pid_t) {
@@ -87,7 +101,7 @@ final class WindowManager: AXEventSink {
 
     // MARK: - Window adoption / filtering
 
-    private func considerWindow(_ element: AXUIElement, pid: pid_t, retile doRetile: Bool) {
+    private func considerWindow(_ element: AXUIElement, pid: pid_t, retile doRetile: Bool, focus: Bool = false) {
         guard registry.id(for: element) == nil else { return }
         let window = AXWindow(element: element, pid: pid)
         guard isTileable(window) else { return }
@@ -111,7 +125,7 @@ final class WindowManager: AXEventSink {
         tree.insert(id, focusedFrame: focusedFrame,
                     insertAt: InsertAt(rawValue: config.layout.insertAt) ?? .after,
                     autoSplit: config.layout.autoSplit)
-        focusedID = id
+        if focus { focusedID = id }
         Log.logger.debug("tile \(id) \(window.title ?? "?") on display \(display) space \(space)")
         if doRetile { retile(tree) }
     }
@@ -220,7 +234,7 @@ final class WindowManager: AXEventSink {
     // MARK: - AXEventSink
 
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
-        considerWindow(element, pid: pid, retile: true)
+        considerWindow(element, pid: pid, retile: true, focus: true)
     }
 
     func windowDestroyed(_ element: AXUIElement, pid: pid_t) {
@@ -426,6 +440,7 @@ final class WindowManager: AXEventSink {
     /// the source desktop and sizing windows on the destination; hidden trees only
     /// recompute. No-op without Space support. Cheap enough for the backstop timer.
     func reconcileSpaces() {
+        discoverWindows()   // pick up windows whose Space was hidden (off AX's list) at startup
         guard spaces.isAvailable else { return }
         refreshActiveSpaces()
 
