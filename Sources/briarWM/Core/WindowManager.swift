@@ -628,7 +628,12 @@ final class WindowManager: AXEventSink {
         guard let window = registry.window(for: id) else { return }
         focusedID = id
         treeContaining(id)?.focused = id
-        window.focus()
-        NSRunningApplication(processIdentifier: window.pid)?.activate(options: [.activateIgnoringOtherApps])
+        // Bring the target's process frontmost and make its window key. On macOS 14+ this
+        // SkyLight path is the only reliable cross-app focus transfer; activate() is only a
+        // fallback for when the private symbols are unavailable (and is itself unreliable).
+        if !spaces.raiseAndFocus(window.element, pid: window.pid) {
+            NSRunningApplication(processIdentifier: window.pid)?.activate()
+        }
+        window.focus()   // AX: mark the window main/focused and raise within its app
     }
 }

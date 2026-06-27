@@ -2,6 +2,11 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
+/// Two-word Carbon process serial number, redeclared locally (same layout as
+/// `ProcessSerialNumber`) so the focus path doesn't depend on the deprecated Process
+/// Manager Swift overlay — the symbol is resolved by `dlsym` like every other private one.
+private struct CarbonPSN { var hi: UInt32 = 0; var lo: UInt32 = 0 }
+
 /// One managed Space (desktop) as reported by the window server.
 ///
 /// `type` is the raw CGS space type: `0` = user (a normal, tileable desktop),
@@ -59,6 +64,9 @@ final class SpacesManager {
     private typealias CopyManagedDisplaySpacesFn = @convention(c) (Int32) -> Unmanaged<CFArray>?
     private typealias MoveWindowsToSpaceFn = @convention(c) (Int32, CFArray, UInt64) -> Void
     private typealias SetCurrentSpaceFn = @convention(c) (Int32, CFString, UInt64) -> Void
+    private typealias GetProcessForPIDFn = @convention(c) (pid_t, UnsafeMutableRawPointer) -> Int32
+    private typealias SetFrontProcessFn = @convention(c) (UnsafeMutableRawPointer, UInt32, UInt32) -> Int32
+    private typealias PostEventRecordFn = @convention(c) (UnsafeMutableRawPointer, UnsafeMutablePointer<UInt8>) -> Int32
 
     private let cid: Int32
     private let getWindow: GetWindowFn?
@@ -66,6 +74,9 @@ final class SpacesManager {
     private let copyManagedDisplaySpaces: CopyManagedDisplaySpacesFn?
     private let moveWindowsToSpace: MoveWindowsToSpaceFn?
     private let setCurrentSpaceFn: SetCurrentSpaceFn?
+    private let getProcessForPID: GetProcessForPIDFn?
+    private let setFrontProcess: SetFrontProcessFn?
+    private let postEventRecord: PostEventRecordFn?
 
     /// `CGSCopySpacesForWindows` mask: current | other | user spaces (0x1 | 0x2 | 0x4).
     private static let allSpacesMask: Int32 = 0x7
@@ -74,11 +85,15 @@ final class SpacesManager {
         // Resolve from the global scope first (these are usually already linked via
         // CoreGraphics); fall back to an explicit load of SkyLight.
         let skyLight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+        // GetProcessForPID lives in ApplicationServices (HIServices), not SkyLight, and isn't
+        // always already in RTLD_DEFAULT — load it explicitly so the focus path resolves.
+        let appServices = dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", RTLD_LAZY)
         func sym(_ names: [String]) -> UnsafeMutableRawPointer? {
             let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2)  // RTLD_DEFAULT
             for name in names {
                 if let p = dlsym(rtldDefault, name) { return p }
                 if let h = skyLight, let p = dlsym(h, name) { return p }
+                if let h = appServices, let p = dlsym(h, name) { return p }
             }
             return nil
         }
@@ -94,6 +109,11 @@ final class SpacesManager {
         copyManagedDisplaySpaces = cast(sym(["CGSCopyManagedDisplaySpaces", "SLSCopyManagedDisplaySpaces"]), to: CopyManagedDisplaySpacesFn.self)
         moveWindowsToSpace = cast(sym(["CGSMoveWindowsToManagedSpace", "SLSMoveWindowsToManagedSpace"]), to: MoveWindowsToSpaceFn.self)
         setCurrentSpaceFn = cast(sym(["CGSManagedDisplaySetCurrentSpace", "SLSManagedDisplaySetCurrentSpace"]), to: SetCurrentSpaceFn.self)
+        // Cross-app focus path (front process + synthetic make-key events). GetProcessForPID
+        // lives in CoreServices, the two _SLPS/SLPS calls in SkyLight.
+        getProcessForPID = cast(sym(["GetProcessForPID"]), to: GetProcessForPIDFn.self)
+        setFrontProcess = cast(sym(["_SLPSSetFrontProcessWithOptions"]), to: SetFrontProcessFn.self)
+        postEventRecord = cast(sym(["SLPSPostEventRecordTo"]), to: PostEventRecordFn.self)
 
         if !isAvailable {
             Log.logger.warning("Space awareness unavailable (private CGS symbols missing) — falling back to one tree per display")
@@ -154,6 +174,40 @@ final class SpacesManager {
     func moveWindow(_ windowID: CGWindowID, toSpace space: SpaceID) {
         guard let moveWindowsToSpace else { return }
         moveWindowsToSpace(cid, [NSNumber(value: windowID)] as CFArray, space)
+    }
+
+    /// Move keyboard focus to `element`'s window, bringing `pid`'s process frontmost via the
+    /// private SkyLight front-process call and synthesizing the two "make key window" event
+    /// records the window server expects. On macOS 14+ this is the only dependable way for an
+    /// accessory app to transfer focus *across applications*: `NSRunningApplication.activate`'s
+    /// cooperative-activation model routinely refuses it (and the old `.activateIgnoringOtherApps`
+    /// option is a no-op). Returns false — caller should fall back to AX + `activate()` — when
+    /// the symbols or the process serial number can't be resolved.
+    @discardableResult
+    func raiseAndFocus(_ element: AXUIElement, pid: pid_t) -> Bool {
+        guard let getProcessForPID, let setFrontProcess, let postEventRecord else { return false }
+        var psn = CarbonPSN()
+        return withUnsafeMutablePointer(to: &psn) { ptr -> Bool in
+            let raw = UnsafeMutableRawPointer(ptr)
+            guard getProcessForPID(pid, raw) == 0 else { return false }   // 0 == noErr
+            let wid = cgWindowID(for: element) ?? 0
+            _ = setFrontProcess(raw, wid, 0x200)                          // 0x200 == kCPSUserGenerated
+            guard wid != 0 else { return true }
+
+            // Event-record byte layout (offsets are yabai's, stable for years): [0x04]=length,
+            // [0x3a]=0x10, window id at [0x3c], 0xFF×16 at [0x20]; [0x08] flips 0x01→0x02 between
+            // the two posts that together make the window key.
+            var bytes = [UInt8](repeating: 0, count: 0xf8)
+            bytes[0x04] = 0xf8
+            bytes[0x3a] = 0x10
+            withUnsafeBytes(of: wid.littleEndian) { for i in 0..<4 { bytes[0x3c + i] = $0[i] } }
+            for i in 0..<0x10 { bytes[0x20 + i] = 0xFF }
+            bytes[0x08] = 0x01
+            _ = bytes.withUnsafeMutableBufferPointer { postEventRecord(raw, $0.baseAddress!) }
+            bytes[0x08] = 0x02
+            _ = bytes.withUnsafeMutableBufferPointer { postEventRecord(raw, $0.baseAddress!) }
+            return true
+        }
     }
 
     /// Switch the given display to `space`. May not animate and can be glitchy on some
