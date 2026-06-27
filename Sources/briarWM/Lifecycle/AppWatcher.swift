@@ -46,6 +46,19 @@ final class AppWatcher {
             self?.manager.screensChanged()
         })
 
+        // Returning from sleep or screen unlock fires neither a reliable Space-change nor
+        // an app-activation notification, and while locked the active Space is the
+        // loginwindow Space — so force a full re-sync to restore tiling on wake/unlock.
+        // `screenIsUnlocked` is a private-but-stable DistributedNotificationCenter name.
+        let resync: (Notification) -> Void = { [weak self] _ in self?.manager.resync() }
+        tokens.append(ws.addObserver(forName: NSWorkspace.didWakeNotification,
+                                     object: nil, queue: .main, using: resync))
+        tokens.append(ws.addObserver(forName: NSWorkspace.screensDidWakeNotification,
+                                     object: nil, queue: .main, using: resync))
+        tokens.append(DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"),
+            object: nil, queue: .main, using: resync))
+
         // Backstop: a Mission Control *drag-to-thumbnail* that doesn't switch the active
         // Space fires neither an AX nor a Space-change notification, so the source gap
         // would otherwise linger. Poll to catch it (`space_poll_interval: 0` disables).
@@ -59,6 +72,13 @@ final class AppWatcher {
 
     deinit {
         pollTimer?.invalidate()
-        tokens.forEach { NotificationCenter.default.removeObserver($0) }
+        // Tokens span three centers (workspace, default, distributed); removing a token
+        // from a center that doesn't hold it is a harmless no-op, so clear all three.
+        let ws = NSWorkspace.shared.notificationCenter
+        tokens.forEach {
+            ws.removeObserver($0)
+            NotificationCenter.default.removeObserver($0)
+            DistributedNotificationCenter.default().removeObserver($0)
+        }
     }
 }

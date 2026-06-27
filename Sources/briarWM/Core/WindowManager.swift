@@ -56,6 +56,18 @@ final class WindowManager: AXEventSink {
         }
     }
 
+    /// Full re-sync after the machine wakes from sleep or the screen unlocks. Across those
+    /// transitions the Space-change / app-activation notifications that normally drive
+    /// tiling fire unreliably, and while locked the visible Space is the loginwindow Space
+    /// — so re-read the active Spaces, re-home any windows that drifted, and re-apply every
+    /// frame. Idempotent; safe to call on each wake/unlock notification.
+    func resync() {
+        refreshActiveSpaces()
+        reconcileSpaces()
+        retileAll()
+        Log.logger.debug("resync after wake/unlock")
+    }
+
     /// Adopt standard windows that exist but aren't tracked yet — typically windows that
     /// lived on a non-active Space when briarWM launched (AX's per-app window list omits
     /// off-Space windows, so the startup scan never saw them) and only became enumerable
@@ -182,9 +194,13 @@ final class WindowManager: AXEventSink {
     }
 
     /// Refresh the visible Space per display from the window server (or pseudo-Spaces).
+    /// Skip displays whose current Space isn't a user desktop: while the screen is locked
+    /// the loginwindow Space is reported as current, and recording it would make `isActive`
+    /// false for every real tree (tiling silently stops). Keeping the last-known-good user
+    /// Space through the locked interval lets `resync()` restore tiling cleanly on unlock.
     private func refreshActiveSpaces() {
         if spaces.isAvailable {
-            for ds in spaces.displayLayout() {
+            for ds in spaces.displayLayout() where ds.currentIsUserSpace {
                 if let d = ds.displayID { activeSpace[d] = ds.currentSpace }
             }
         }

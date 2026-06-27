@@ -20,6 +20,15 @@ struct DisplaySpaces: Equatable {
     let displayID: DisplayID?    // resolved CGDirectDisplayID, or nil if unmatched
     let currentSpace: SpaceID
     let spaces: [SpaceInfo]
+
+    /// True when the currently-visible Space is a normal user desktop. While the screen
+    /// is locked (or showing the login window), the window server reports a system Space
+    /// as current — which is *not* one of our trees. Callers use this to avoid recording
+    /// that transient Space as "active" and stranding tiling until something re-queries.
+    /// Pure — unit-testable. False if the current Space isn't found in `spaces`.
+    var currentIsUserSpace: Bool {
+        spaces.first { $0.id == currentSpace }?.isUser ?? false
+    }
 }
 
 /// 1-based index into the *user* Spaces of `spaces` (skipping fullscreen/system).
