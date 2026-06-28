@@ -453,7 +453,7 @@ final class WindowManager: AXEventSink {
         // window if a tiled one is focused, else focus the focused tree's window.
         guard let fid = focusedID else { return }
         if registry.isFloating(fid) {
-            if let tiled = trees.values.first(where: { isActive($0) && $0.focused != nil })?.focused { focus(windowID: tiled) }
+            if let (tiled, _) = preferredActiveFocus() { focus(windowID: tiled) }
         } else if let anyFloating = registry.floating.first {
             focus(windowID: anyFloating)
         }
@@ -513,7 +513,13 @@ final class WindowManager: AXEventSink {
     /// then re-tile the visible desktops. Active trees apply frames — closing the gap on
     /// the source desktop and sizing windows on the destination; hidden trees only
     /// recompute. No-op without Space support. Cheap enough for the backstop timer.
-    func reconcileSpaces() {
+    ///
+    /// `moveFocus` is true only for a genuine user-facing Space switch (the
+    /// `activeSpaceDidChange` notification) — then focus is asserted onto the now-visible
+    /// desktop. Every other caller (the backstop poll, app activation, display reconfig,
+    /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
+    /// steals OS keyboard focus out from under the user.
+    func reconcileSpaces(moveFocus: Bool = false) {
         discoverWindows()   // pick up windows whose Space was hidden (off AX's list) at startup
         guard spaces.isAvailable else { return }
         refreshActiveSpaces()
@@ -552,7 +558,7 @@ final class WindowManager: AXEventSink {
         var toRetile = dirty
         for tree in trees.values where isActive(tree) { toRetile.insert(tree.space) }
         toRetile.forEach { if let t = trees[$0] { retile(t) } }
-        reassertFocusOnActiveDesktop()
+        repairFocusCache(moveFocus: moveFocus)
     }
 
     /// Switch the focused window's display to its `index`-th user desktop (1-based). The
@@ -585,13 +591,42 @@ final class WindowManager: AXEventSink {
         if config.layout.moveFollowsFocus { switchToDesktop(index) }
     }
 
-    /// If the focused window sits on a now-hidden desktop, move focus to a visible one.
-    private func reassertFocusOnActiveDesktop() {
-        guard let fid = focusedID, let tree = treeContaining(fid), !isActive(tree) else { return }
-        if let active = trees.values.first(where: { isActive($0) && $0.focused != nil }),
-           let target = active.focused {
-            focus(windowID: target)
+    /// Keep `focusedID` pointing at a window on a visible desktop. When the cache is already
+    /// valid this is a no-op; otherwise it adopts the deterministic `preferredActiveFocus()`.
+    /// Cache-only unless `moveFocus` (a genuine user Space switch) — so the backstop poll,
+    /// app activation and display reconfig repair the cache without yanking OS focus. This
+    /// also rescues a `focusedID` left pointing at a *parked* window (the old reassert no-op'd
+    /// there because `treeContaining` skips parked trees).
+    private func repairFocusCache(moveFocus: Bool) {
+        if let fid = focusedID, let tree = treeContaining(fid), isActive(tree) { return }
+        guard let (id, tree) = preferredActiveFocus() else { return }
+        Log.logger.debug("focus repair: \(String(describing: focusedID)) → \(id) on display \(tree.display) space \(tree.space) [moveFocus=\(moveFocus)]")
+        if moveFocus { focus(windowID: id) } else { setFocused(id) }
+    }
+
+    /// Update the focus cache without touching OS keyboard focus.
+    private func setFocused(_ id: WinID) {
+        focusedID = id
+        treeContaining(id)?.focused = id
+    }
+
+    /// The window a focus recovery should land on, chosen deterministically: the frontmost
+    /// app's AX-focused window if it's tiled on an active tree (what the user is really
+    /// looking at), else the active focus-remembering tree with the lowest `(display, space)`.
+    /// Deterministic ordering matters because `trees` is a Dictionary — `first(where:)` would
+    /// otherwise pick an arbitrary display.
+    private func preferredActiveFocus() -> (WinID, BSPTree)? {
+        if let app = NSWorkspace.shared.frontmostApplication,
+           let element = apps[app.processIdentifier]?.focusedWindow(),
+           let id = registry.id(for: element),
+           let tree = treeContaining(id), isActive(tree) {
+            return (id, tree)
         }
+        let candidates = trees.values
+            .filter { isActive($0) && $0.focused != nil }
+            .sorted { ($0.display, $0.space) < ($1.display, $1.space) }
+        if let tree = candidates.first, let id = tree.focused { return (id, tree) }
+        return nil
     }
 
     /// The (window, tree) a "focused" command should act on, guaranteed to be on a visible
@@ -603,20 +638,8 @@ final class WindowManager: AXEventSink {
             return (fid, tree)                                   // cache valid & visible
         }
         refreshActiveSpaces()
-        // The window the user is really looking at: the frontmost app's AX-focused window,
-        // if it is tiled on a now-active Space.
-        if let app = NSWorkspace.shared.frontmostApplication,
-           let element = apps[app.processIdentifier]?.focusedWindow(),
-           let id = registry.id(for: element),
-           let tree = treeContaining(id), isActive(tree) {
-            focusedID = id
-            tree.focused = id
-            return (id, tree)
-        }
-        // Fall back to a visible tree's remembered focus.
-        if let tree = trees.values.first(where: { isActive($0) && $0.focused != nil }),
-           let id = tree.focused {
-            focusedID = id
+        if let (id, tree) = preferredActiveFocus() {
+            setFocused(id)                                       // self-heal the cache
             return (id, tree)
         }
         return nil
