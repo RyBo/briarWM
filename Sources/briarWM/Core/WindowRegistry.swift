@@ -30,6 +30,21 @@ final class WindowRegistry {
         return id
     }
 
+    /// Re-point an existing `WinID` at a new AX element — used when a native tab comes to
+    /// the front and should occupy the tab group's existing tile. Keeps the `WinID` (and
+    /// thus its tree slot, desired frame, focus, and floating flag) and swaps only the
+    /// tracked element, preserving the byID/idByElement 1:1 index. `newElement` must be
+    /// unmanaged (callers guarantee it). Returns false if `id` is unknown.
+    @discardableResult
+    func rebind(_ id: WinID, to newElement: AXUIElement, pid: pid_t) -> Bool {
+        guard let old = byID[id] else { return false }
+        idByElement.removeValue(forKey: AXElementKey(element: old.element))
+        let window = AXWindow(element: newElement, pid: pid)
+        byID[id] = window
+        idByElement[AXElementKey(element: newElement)] = id
+        return true
+    }
+
     func unregister(_ id: WinID) {
         if let w = byID[id] { idByElement.removeValue(forKey: AXElementKey(element: w.element)) }
         byID.removeValue(forKey: id)

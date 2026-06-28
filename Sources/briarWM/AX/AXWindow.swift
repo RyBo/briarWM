@@ -26,6 +26,16 @@ struct AXWindow: Equatable {
     var isFullscreen: Bool { AXClient.bool(element, "AXFullScreen") ?? false }
     var isResizable: Bool { AXClient.isSettable(element, kAXSizeAttribute as String) }
 
+    /// False once the underlying window is gone. Reads `kAXRole` and treats a destroyed
+    /// element (`.invalidUIElement`) or a dead/unresponsive app (`.cannotComplete`) as dead.
+    /// A merely hidden / off-Space / occluded window answers `.success` → still alive.
+    var exists: Bool {
+        switch AXClient.attributeError(element, kAXRoleAttribute as String) {
+        case .invalidUIElement, .cannotComplete: return false
+        default: return true
+        }
+    }
+
     @discardableResult
     func setPosition(_ p: CGPoint) -> Bool { AXClient.setPoint(element, kAXPositionAttribute as String, p) }
     @discardableResult

@@ -1,11 +1,16 @@
 import AppKit
 import Foundation
+import Logging
 
 // briarWM — a simple macOS BSP tiling window manager.
 // Runs as an accessory (no Dock icon) on the main run loop, which AX observers
 // and Carbon hotkeys both require.
 
-Log.bootstrap()
+// Log level defaults to info; set BRIARWM_LOG=debug (or trace/warning/error) for verbose
+// diagnostics, e.g. tab adopt/rebind/ignore decisions.
+let logLevel = ProcessInfo.processInfo.environment["BRIARWM_LOG"]
+    .flatMap { Logger.Level(rawValue: $0.lowercased()) } ?? .info
+Log.bootstrap(level: logLevel)
 
 // `briarWM --check-config [path]` validates a config file and exits without
 // touching any windows. Defaults to ~/.config/briarWM/config.yaml.

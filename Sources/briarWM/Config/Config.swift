@@ -80,6 +80,10 @@ struct LayoutOptions: Decodable, Equatable {
     /// Fraction of the screen the main pane takes in the `main-vertical`/`main-horizontal`
     /// presets. Default 0.6.
     var mainRatio: Double
+    /// Treat native macOS window tabs (e.g. Ghostty) as a single tile that follows the
+    /// visible tab, instead of tiling every background tab separately. Default true; set
+    /// false to fall back to the old one-tile-per-window behavior.
+    var manageTabbedWindows: Bool
 
     /// Default `cycle layout` order: the full tmux preset set.
     static let defaultPresetCycle = ["even-horizontal", "even-vertical",
@@ -93,7 +97,8 @@ struct LayoutOptions: Decodable, Equatable {
          moveFollowsFocus: Bool = false,
          spacePollInterval: Double = 1.5,
          presetCycle: [String] = LayoutOptions.defaultPresetCycle,
-         mainRatio: Double = 0.6) {
+         mainRatio: Double = 0.6,
+         manageTabbedWindows: Bool = true) {
         self.defaultRatio = defaultRatio
         self.insertAt = insertAt
         self.autoSplit = autoSplit
@@ -103,6 +108,7 @@ struct LayoutOptions: Decodable, Equatable {
         self.spacePollInterval = spacePollInterval
         self.presetCycle = presetCycle
         self.mainRatio = mainRatio
+        self.manageTabbedWindows = manageTabbedWindows
     }
 
     enum CodingKeys: String, CodingKey {
@@ -115,6 +121,7 @@ struct LayoutOptions: Decodable, Equatable {
         case spacePollInterval = "space_poll_interval"
         case presetCycle = "preset_cycle"
         case mainRatio = "main_ratio"
+        case manageTabbedWindows = "manage_tabbed_windows"
     }
 
     init(from decoder: Decoder) throws {
@@ -128,6 +135,7 @@ struct LayoutOptions: Decodable, Equatable {
         spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? 1.5
         presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? LayoutOptions.defaultPresetCycle
         mainRatio = try c.decodeIfPresent(Double.self, forKey: .mainRatio) ?? 0.6
+        manageTabbedWindows = try c.decodeIfPresent(Bool.self, forKey: .manageTabbedWindows) ?? true
     }
 }
 

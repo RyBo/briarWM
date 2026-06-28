@@ -10,6 +10,13 @@ enum AXClient {
         return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
     }
 
+    /// Raw `AXError` from reading an attribute — lets callers distinguish a destroyed
+    /// element (`.invalidUIElement`) or a dead app (`.cannotComplete`) from a normal miss.
+    static func attributeError(_ element: AXUIElement, _ attribute: String) -> AXError {
+        var value: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+    }
+
     static func string(_ element: AXUIElement, _ attribute: String) -> String? {
         copyAttribute(element, attribute) as? String
     }

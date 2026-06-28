@@ -23,6 +23,7 @@ import Foundation
         #expect(!c.layout.focusFollowsMouse)
         #expect(c.layout.presetCycle == LayoutOptions.defaultPresetCycle)
         #expect(c.layout.mainRatio == 0.6)
+        #expect(c.layout.manageTabbedWindows)
         #expect(c.keybindings.isEmpty)
         #expect(c.rules.isEmpty)
     }
@@ -31,6 +32,11 @@ import Foundation
         let c = try decode(#"{ "layout": { "preset_cycle": ["tiled", "even-vertical"], "main_ratio": 0.7 } }"#)
         #expect(c.layout.presetCycle == ["tiled", "even-vertical"])
         #expect(c.layout.mainRatio == 0.7)
+    }
+
+    @Test func manageTabbedWindowsDecodes() throws {
+        #expect(try decode("{}").layout.manageTabbedWindows)                                  // default true
+        #expect(!(try decode(#"{ "layout": { "manage_tabbed_windows": false } }"#).layout.manageTabbedWindows))
     }
 
     @Test func partialConfigMergesDefaults() throws {

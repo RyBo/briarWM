@@ -1,6 +1,40 @@
 import AppKit
 import ApplicationServices
 
+/// What to do with an untracked window encountered during tab-aware adoption.
+enum AdoptDecision: Equatable {
+    case adopt            // a genuine standalone window → tile it
+    case rebind(WinID)    // the front tab of an existing group → re-point that leaf in place
+    case ignore           // a background tab on the visible desktop → never tile it
+}
+
+/// Pure tab-adoption decision. A window NOT stacked on an existing same-app tile
+/// (`frameMatch == nil`) is a standalone/first window → adopt. One that IS stacked is a native
+/// tab of that group: take over the leaf if this window is the app's front (focused) tab and the
+/// leaf isn't already claimed this pass; otherwise it's a background tab → ignore.
+func tabDecision(frameMatch: WinID?, isFront: Bool, leafAlreadyUsed: Bool) -> AdoptDecision {
+    guard let leaf = frameMatch else { return .adopt }
+    return (isFront && !leafAlreadyUsed) ? .rebind(leaf) : .ignore
+}
+
+/// Nearest leaf whose frame is within `tolerance` of `candidate` — i.e. the candidate is stacked
+/// on it (a native tab joins its group at the group's current frame). Pure; a nil candidate or
+/// no stacked leaf → nil.
+func nearestStackedLeaf(_ candidate: CGRect?,
+                        among leaves: [(id: WinID, frame: CGRect?)],
+                        tolerance: CGFloat) -> WinID? {
+    guard let c = candidate else { return nil }
+    var best: WinID?
+    var bestD = CGFloat.greatestFiniteMagnitude
+    for l in leaves {
+        guard let f = l.frame, rectsApproxEqual(f, c, tolerance) else { continue }
+        let dx = f.midX - c.midX, dy = f.midY - c.midY
+        let d = dx * dx + dy * dy        // squared distance — same ordering as distance
+        if d < bestD { bestD = d; best = l.id }
+    }
+    return best
+}
+
 /// The orchestrator: owns one BSP tree per macOS Space (desktop), tracks windows/apps,
 /// responds to AX events and hotkey-driven commands, and re-tiles. Everything runs on
 /// the main thread, so no locking is needed.
@@ -74,20 +108,6 @@ final class WindowManager: AXEventSink {
         Log.logger.debug("resync after wake/unlock")
     }
 
-    /// Adopt standard windows that exist but aren't tracked yet — typically windows that
-    /// lived on a non-active Space when briarWM launched (AX's per-app window list omits
-    /// off-Space windows, so the startup scan never saw them) and only became enumerable
-    /// once their desktop was activated. Idempotent and cheap; runs on the reconcile
-    /// cadence. Never steals focus (`considerWindow` defaults `focus: false`).
-    private func discoverWindows() {
-        for (pid, app) in apps {
-            for element in app.windows() where registry.id(for: element) == nil {
-                considerWindow(element, pid: pid, retile: true)
-                if registry.id(for: element) != nil { app.observe(window: element) }
-            }
-        }
-    }
-
     // MARK: - App tracking
 
     func addApp(pid: pid_t) {
@@ -95,12 +115,9 @@ final class WindowManager: AXEventSink {
         let axApp = AXApplication(pid: pid, sink: self)
         apps[pid] = axApp
         axApp.start()
-        var changed: Set<SpaceID> = []
-        for element in axApp.windows() where registry.id(for: element) == nil {
-            considerWindow(element, pid: pid, retile: false)
-            if let id = registry.id(for: element), let tree = treeContaining(id) { changed.insert(tree.space) }
-        }
-        changed.forEach { if let t = trees[$0] { retile(t) } }
+        var dirty: Set<SpaceID> = []
+        reconcileApp(pid: pid, dirty: &dirty)   // tab-aware adopt/rebind/skip
+        dirty.forEach { if let t = trees[$0] { retile(t) } }
     }
 
     func removeApp(pid: pid_t) {
@@ -169,6 +186,178 @@ final class WindowManager: AXEventSink {
             }
         }
         return false
+    }
+
+    // MARK: - Tab-aware adoption
+
+    private var manageTabs: Bool { config.layout.manageTabbedWindows }
+    /// How close two windows' frames must be to count as "stacked" — i.e. native tabs of one
+    /// group, which share the exact same frame (0px). Kept tight so it tolerates rounding but
+    /// stays well below macOS's ~20px cascade offset for genuinely *separate* new windows.
+    private static let tabStackTolerance: CGFloat = 10
+
+    /// Adopt / rebind / skip every untracked tileable window of one app.
+    ///
+    /// Native macOS tabs (e.g. Ghostty) surface as separate AX windows *stacked on the same
+    /// frame*, of which only the front one is the app's focused window. So a new window stacked on
+    /// an existing same-app tile is a tab: if it's the app's front tab it takes over that leaf in
+    /// place (no reshuffle), otherwise it's a background tab and is skipped. A window not stacked
+    /// on any tile is a genuine standalone window → adopt. Detection is pure AX (frame + focused
+    /// window) — no private window-server calls — so it's robust to apps the CGS path can't id.
+    private func reconcileApp(pid: pid_t, dirty: inout Set<SpaceID>) {
+        guard let app = apps[pid] else { return }
+        let focused = manageTabs ? app.focusedWindow() : nil
+        var used: Set<WinID> = []
+        for element in app.windows() where registry.id(for: element) == nil {
+            let window = AXWindow(element: element, pid: pid)
+            guard isTileable(window) else { continue }
+            let decision = manageTabs ? classify(element, pid: pid, window: window, focused: focused, used: used) : .adopt
+            switch decision {
+            case .ignore:
+                Log.logger.debug("tab ignore bg \(window.title ?? "?") @ \(frameStr(window.frame))")
+                continue
+            case .rebind(let leaf):
+                registry.rebind(leaf, to: element, pid: pid)
+                app.observe(window: element)
+                used.insert(leaf)
+                if let t = treeContaining(leaf) { dirty.insert(t.space) }
+                Log.logger.debug("tab rebind \(leaf) → front \(window.title ?? "?") @ \(frameStr(window.frame))")
+            case .adopt:
+                considerWindow(element, pid: pid, retile: false)
+                if let id = registry.id(for: element) {
+                    app.observe(window: element)
+                    if let t = treeContaining(id) { dirty.insert(t.space) }
+                    Log.logger.debug("tab adopt \(id) \(window.title ?? "?") @ \(frameStr(window.frame))")
+                }
+            }
+        }
+        dedupApp(pid: pid, dirty: &dirty)   // collapse any leaves that ended up stacked (mistimed adoption)
+    }
+
+    /// Merge native-tab leaves that ended up stacked. Tabs of one group always share their actual
+    /// on-screen frame (macOS keeps them stacked — `setFrame` moves the whole group), no matter
+    /// what distinct tiles we assigned. So if two managed leaves of one app sit on the same actual
+    /// frame, they're tabs of one group: keep the front tab's leaf and drop the rest. This is the
+    /// backstop that recovers from any stray adoption of a background tab (e.g. an AX frame that
+    /// wasn't stacked yet when the create notification fired). Runs without any retile in between,
+    /// so removing the duplicate promotes the survivor back to the group's original tile.
+    private func dedupApp(pid: pid_t, dirty: inout Set<SpaceID>) {
+        guard manageTabs, let app = apps[pid] else { return }
+        let focused = app.focusedWindow()
+        func isFront(_ id: WinID) -> Bool {
+            guard let f = focused, let el = registry.window(for: id)?.element else { return false }
+            return CFEqual(f, el)
+        }
+        var entries: [(id: WinID, tree: BSPTree, frame: CGRect)] = []
+        for tree in trees.values where isActive(tree) {
+            for id in tree.windowIDs where !registry.isFloating(id) {
+                guard let w = registry.window(for: id), w.pid == pid, let f = w.frame else { continue }
+                entries.append((id, tree, f))
+            }
+        }
+        var handled: Set<WinID> = []
+        for i in entries.indices where !handled.contains(entries[i].id) {
+            var cluster = [entries[i]]
+            for j in entries.indices where j > i && !handled.contains(entries[j].id)
+                && rectsApproxEqual(entries[i].frame, entries[j].frame, Self.tabStackTolerance) {
+                cluster.append(entries[j])
+            }
+            cluster.forEach { handled.insert($0.id) }
+            guard cluster.count > 1 else { continue }
+            let keep = cluster.first(where: { isFront($0.id) }) ?? cluster[0]
+            if let f = focused, registry.id(for: f) == nil {        // ensure the survivor shows the front tab
+                registry.rebind(keep.id, to: f, pid: pid)
+                app.observe(window: f)
+            }
+            for c in cluster where c.id != keep.id {
+                Log.logger.debug("tab dedup: drop stacked leaf \(c.id) (kept \(keep.id)) @ \(frameStr(c.frame))")
+                c.tree.remove(c.id)
+                registry.unregister(c.id)
+                desiredFrames.removeValue(forKey: c.id)
+                if zoomedID == c.id { zoomedID = nil }
+                if focusedID == c.id { focusedID = keep.id }
+                dirty.insert(c.tree.space)
+            }
+            dirty.insert(keep.tree.space)
+        }
+    }
+
+    /// Decide what to do with one untracked window: is it stacked on an existing same-app tile
+    /// (→ a native tab), and if so is it the app's front (focused) window?
+    private func classify(_ element: AXUIElement, pid: pid_t, window: AXWindow,
+                          focused: AXUIElement?, used: Set<WinID>) -> AdoptDecision {
+        let leaf = frameMatchLeaf(pid: pid, frame: window.frame)
+        let isFront = focused.map { CFEqual($0, element) } ?? false
+        let claimed = leaf.map { used.contains($0) } ?? false
+        return tabDecision(frameMatch: leaf, isFront: isFront, leafAlreadyUsed: claimed)
+    }
+
+    /// The managed same-app leaf the given window is stacked on (a native tab joins its group at
+    /// the group's frame), or nil if it sits on no existing tile — i.e. it's a standalone window.
+    private func frameMatchLeaf(pid: pid_t, frame: CGRect?) -> WinID? {
+        var leaves: [(id: WinID, frame: CGRect?)] = []
+        for tree in trees.values where isActive(tree) {
+            for id in tree.windowIDs where !registry.isFloating(id) {
+                guard let w = registry.window(for: id), w.pid == pid, !w.isMinimized else { continue }
+                leaves.append((id, w.frame ?? desiredFrames[id]))
+            }
+        }
+        return nearestStackedLeaf(frame, among: leaves, tolerance: Self.tabStackTolerance)
+    }
+
+    /// On a front-tab close, macOS promotes the next tab to the app's focused window. If that
+    /// promoted window is untracked and stacked on the vacated tile, return it so the leaf can
+    /// rebind to it instead of collapsing. A normal single-window close has no such sibling → nil.
+    private func promotedTabSibling(forClosing id: WinID, pid: pid_t) -> AXUIElement? {
+        guard manageTabs, let app = apps[pid], let vacated = desiredFrames[id],
+              let focused = app.focusedWindow(), registry.id(for: focused) == nil else { return nil }
+        let w = AXWindow(element: focused, pid: pid)
+        guard w.subrole == (kAXStandardWindowSubrole as String), !w.isMinimized,
+              let f = w.frame, rectsApproxEqual(f, vacated, Self.tabStackTolerance) else { return nil }
+        return focused
+    }
+
+    private func frameStr(_ r: CGRect?) -> String {
+        guard let r = r else { return "nil" }
+        return "(\(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height)))"
+    }
+
+    /// Remove managed windows whose AX element is gone — the backstop for a missed/misdirected
+    /// `kAXUIElementDestroyed` (notably Firefox). Returns the Spaces that need a retile. Never
+    /// reaps a merely hidden / off-Space / occluded window (their elements still answer AX).
+    private func reapDeadWindows() -> Set<SpaceID> {
+        var dirty: Set<SpaceID> = []
+        for tree in Array(trees.values) {                 // snapshot: we mutate tree contents
+            for id in tree.windowIDs where !registry.isFloating(id) {
+                guard let w = registry.window(for: id), isDead(w) else { continue }
+                Log.logger.debug("reap dead window \(id)")
+                tree.remove(id)
+                registry.unregister(id)
+                desiredFrames.removeValue(forKey: id)
+                if zoomedID == id { zoomedID = nil }
+                if focusedID == id { focusedID = tree.focused }
+                dirty.insert(tree.space)
+            }
+        }
+        for tree in parkedTrees {                          // parked trees leak too if dead-but-registered
+            for id in tree.windowIDs where !registry.isFloating(id) {
+                if let w = registry.window(for: id), isDead(w) {
+                    tree.remove(id)
+                    registry.unregister(id)
+                    desiredFrames.removeValue(forKey: id)
+                }
+            }
+        }
+        parkedTrees.removeAll { $0.isEmpty }
+        return dirty
+    }
+
+    /// True once a window is gone. Corroborate `!exists` with a missing window-server id when
+    /// Spaces are available, so a momentarily-unresponsive (but alive) app isn't reaped.
+    private func isDead(_ w: AXWindow) -> Bool {
+        if w.exists { return false }
+        if spaces.isAvailable { return spaces.cgWindowID(for: w.element) == nil }
+        return true
     }
 
     // MARK: - Trees / displays / Spaces
@@ -275,11 +464,29 @@ final class WindowManager: AXEventSink {
     // MARK: - AXEventSink
 
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
-        considerWindow(element, pid: pid, retile: true, focus: true)
+        var dirty: Set<SpaceID> = []
+        reconcileApp(pid: pid, dirty: &dirty)   // adopt OR rebind OR ignore
+        if let id = registry.id(for: element) {                         // nil ⇒ ignored background tab
+            focusedID = id
+            treeContaining(id)?.focused = id
+        }
+        dirty.forEach { if let t = trees[$0] { retile(t) } }
     }
 
     func windowDestroyed(_ element: AXUIElement, pid: pid_t) {
-        guard let id = registry.id(for: element) else { return }
+        guard let id = registry.id(for: element) else { return }   // misdirected destroy → poll reap handles it
+        // A native tab close where a sibling is promoted to front: keep the tile, show the
+        // sibling (rebind) instead of collapsing the layout.
+        if !registry.isFloating(id), let tree = treeContaining(id), isActive(tree),
+           let promoted = promotedTabSibling(forClosing: id, pid: pid) {
+            registry.rebind(id, to: promoted, pid: pid)
+            apps[pid]?.observe(window: promoted)
+            focusedID = id
+            tree.focused = id
+            Log.logger.debug("tab close rebind \(id) → promoted sibling")
+            retile(tree)
+            return
+        }
         let tree = anyTreeContaining(id)               // could be parked (its monitor is asleep)
         tree?.remove(id)
         registry.unregister(id)
@@ -290,10 +497,23 @@ final class WindowManager: AXEventSink {
         if let tree { retile(tree) }                   // no-op for a parked tree (display gone)
     }
 
-    func focusChanged(pid: pid_t) {
-        guard let focused = apps[pid]?.focusedWindow(), let id = registry.id(for: focused) else { return }
-        focusedID = id
-        treeContaining(id)?.focused = id
+    func focusChanged(pid: pid_t) { refreshFocus(pid: pid) }
+    func appActivated(pid: pid_t) { refreshFocus(pid: pid) }
+
+    /// Update the focus cache from an app's AX-focused window. Fast path (cache-only, no CG
+    /// call) when that window is already managed. When it isn't — a switch to a background tab
+    /// — reconcile the app first so the tab group's leaf rebinds to the now-front element, then
+    /// read the id back. Never steals OS focus.
+    private func refreshFocus(pid: pid_t) {
+        guard let focused = apps[pid]?.focusedWindow() else { return }
+        if let id = registry.id(for: focused) { setFocused(id); return }
+        guard manageTabs else { return }
+        // A switch to a background tab: reconcile so the group's leaf rebinds to the now-front
+        // tab, then adopt the resulting focus.
+        var dirty: Set<SpaceID> = []
+        reconcileApp(pid: pid, dirty: &dirty)
+        if let id = registry.id(for: focused) { setFocused(id) }    // now == the rebound leaf
+        dirty.forEach { if let t = trees[$0] { retile(t) } }
     }
 
     func windowMovedOrResized(_ element: AXUIElement, pid: pid_t) {
@@ -303,12 +523,6 @@ final class WindowManager: AXEventSink {
               let current = registry.window(for: id)?.frame else { return }
         // If a tiled window drifted from its computed slot, the user dragged it: snap back.
         if !rectsApproxEqual(current, desired, 3) { retile(tree) }
-    }
-
-    func appActivated(pid: pid_t) {
-        guard let focused = apps[pid]?.focusedWindow(), let id = registry.id(for: focused) else { return }
-        focusedID = id
-        treeContaining(id)?.focused = id
     }
 
     func screensChanged() {
@@ -542,13 +756,28 @@ final class WindowManager: AXEventSink {
     /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
     /// steals OS keyboard focus out from under the user.
     func reconcileSpaces(moveFocus: Bool = false) {
-        discoverWindows()   // pick up windows whose Space was hidden (off AX's list) at startup
-        guard spaces.isAvailable else { return }
-        refreshActiveSpaces()
+        refreshActiveSpaces()                          // (1) keep activeSpace fresh
+        var dirty: Set<SpaceID> = []
+
+        // (2) Tab-aware discover/adopt/rebind/skip for every app (replaces discoverWindows()):
+        // picks up windows whose Space was hidden at startup, and keeps native tab groups to a
+        // single tile that follows the front tab.
+        for pid in Array(apps.keys) { reconcileApp(pid: pid, dirty: &dirty) }
+
+        // (3) Reap windows whose AX element is gone — the backstop for a missed/misdirected
+        // destroy notification (Firefox). After the rebind pass above so a promoted sibling
+        // rescues a dead front tab instead of being reaped + re-adopted. Needs only AX (not
+        // Spaces), so it runs in pseudo-Space mode too.
+        dirty.formUnion(reapDeadWindows())
+
+        guard spaces.isAvailable else {                // pseudo-Space mode: just apply adoptions
+            var toRetile = dirty
+            for tree in trees.values where isActive(tree) { toRetile.insert(tree.space) }
+            toRetile.forEach { if let t = trees[$0] { retile(t) } }
+            return
+        }
 
         let spaceDisplay = spaceDisplayMap()           // space → owning display, current layout
-
-        var dirty: Set<SpaceID> = []
 
         // Keep each tree on the display that currently owns its Space. Display ids and
         // space→display assignments both drift across a monitor reconnect, and a stale
