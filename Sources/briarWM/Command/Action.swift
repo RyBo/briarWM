@@ -8,6 +8,8 @@ enum Action: Equatable {
     case resize(Direction, CGFloat)
     case preselect(Orientation)
     case toggleSplit
+    case cycleLayout            // snap the whole desktop to the next preset in the cycle
+    case setLayout(LayoutPreset)  // snap the whole desktop to a specific preset
     case balance
     case fullscreen
     case toggleFloat
@@ -67,6 +69,14 @@ extension Action {
             case "float", "floating": return .toggleFloat
             default: return nil
             }
+
+        case "cycle":
+            return lc.first == "layout" ? .cycleLayout : nil
+
+        case "layout":
+            if lc.first == "cycle" || lc.first == "next" { return .cycleLayout }
+            if let p = lc.first.flatMap(LayoutPreset.init(token:)) { return .setLayout(p) }
+            return nil
 
         case "balance": return .balance
         case "fullscreen", "zoom": return .fullscreen

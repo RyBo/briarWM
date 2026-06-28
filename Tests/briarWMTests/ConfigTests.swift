@@ -21,8 +21,16 @@ import Foundation
         #expect(c.layout.insertAt == "after")
         #expect(c.layout.focusWrapsMonitors)
         #expect(!c.layout.focusFollowsMouse)
+        #expect(c.layout.presetCycle == LayoutOptions.defaultPresetCycle)
+        #expect(c.layout.mainRatio == 0.6)
         #expect(c.keybindings.isEmpty)
         #expect(c.rules.isEmpty)
+    }
+
+    @Test func layoutPresetOptionsDecode() throws {
+        let c = try decode(#"{ "layout": { "preset_cycle": ["tiled", "even-vertical"], "main_ratio": 0.7 } }"#)
+        #expect(c.layout.presetCycle == ["tiled", "even-vertical"])
+        #expect(c.layout.mainRatio == 0.7)
     }
 
     @Test func partialConfigMergesDefaults() throws {

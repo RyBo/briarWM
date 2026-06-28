@@ -73,6 +73,17 @@ struct LayoutOptions: Decodable, Equatable {
     /// another desktop without a Space switch (those fire no AX/Space notification).
     /// `0` disables the backstop. Default 1.5s.
     var spacePollInterval: Double
+    /// Preset names the `cycle layout` hotkey steps through, in order. Unknown names
+    /// are ignored at runtime. Kept as `[String]` so Config stays decoupled from the
+    /// `LayoutPreset` enum.
+    var presetCycle: [String]
+    /// Fraction of the screen the main pane takes in the `main-vertical`/`main-horizontal`
+    /// presets. Default 0.6.
+    var mainRatio: Double
+
+    /// Default `cycle layout` order: the full tmux preset set.
+    static let defaultPresetCycle = ["even-horizontal", "even-vertical",
+                                     "main-vertical", "main-horizontal", "tiled"]
 
     init(defaultRatio: Double = 0.5,
          insertAt: String = "after",
@@ -80,7 +91,9 @@ struct LayoutOptions: Decodable, Equatable {
          focusWrapsMonitors: Bool = true,
          focusFollowsMouse: Bool = false,
          moveFollowsFocus: Bool = false,
-         spacePollInterval: Double = 1.5) {
+         spacePollInterval: Double = 1.5,
+         presetCycle: [String] = LayoutOptions.defaultPresetCycle,
+         mainRatio: Double = 0.6) {
         self.defaultRatio = defaultRatio
         self.insertAt = insertAt
         self.autoSplit = autoSplit
@@ -88,6 +101,8 @@ struct LayoutOptions: Decodable, Equatable {
         self.focusFollowsMouse = focusFollowsMouse
         self.moveFollowsFocus = moveFollowsFocus
         self.spacePollInterval = spacePollInterval
+        self.presetCycle = presetCycle
+        self.mainRatio = mainRatio
     }
 
     enum CodingKeys: String, CodingKey {
@@ -98,6 +113,8 @@ struct LayoutOptions: Decodable, Equatable {
         case focusFollowsMouse = "focus_follows_mouse"
         case moveFollowsFocus = "move_follows_focus"
         case spacePollInterval = "space_poll_interval"
+        case presetCycle = "preset_cycle"
+        case mainRatio = "main_ratio"
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +126,8 @@ struct LayoutOptions: Decodable, Equatable {
         focusFollowsMouse = try c.decodeIfPresent(Bool.self, forKey: .focusFollowsMouse) ?? false
         moveFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .moveFollowsFocus) ?? false
         spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? 1.5
+        presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? LayoutOptions.defaultPresetCycle
+        mainRatio = try c.decodeIfPresent(Double.self, forKey: .mainRatio) ?? 0.6
     }
 }
 

@@ -20,6 +20,11 @@ final class BSPTree {
     var focused: WinID?
     /// bspwm-style preselection: orientation to use for the *next* insert.
     var preselect: Orientation?
+    /// The canonical preset this tree was last snapped to (via `cycle layout`), or
+    /// nil if it's an organic BSP tree. Remembered per-Space so cycling advances from
+    /// where it left off; goes stale once a window is inserted/removed, which is fine —
+    /// the next cycle press just rebuilds from the first preset onward.
+    var layoutPreset: LayoutPreset?
 
     init(display: DisplayID, space: SpaceID = 0) {
         self.display = display
@@ -233,5 +238,20 @@ final class BSPTree {
               let p = leaf.parent,
               case .split(let o, let r, let a, let b) = p.kind else { return }
         p.kind = .split(orientation: o.flipped, ratio: r, first: a, second: b)
+    }
+
+    // MARK: - Presets
+
+    /// Rebuild the whole tree into `preset`, keeping the same window set and order.
+    /// Manual ratios/split toggles are discarded by design (a preset is canonical).
+    func applyPreset(_ preset: LayoutPreset, mainRatio: Double = 0.6) {
+        let ids = root?.leafWindowIDs() ?? []
+        guard !ids.isEmpty else { return }
+        root = preset.build(ids, mainRatio: mainRatio)
+        layoutPreset = preset
+        // The window set is unchanged, so `focused` stays valid; re-point defensively.
+        if let f = focused, root?.findLeaf(f) == nil {
+            focused = root?.leftmostLeaf().windowID
+        }
     }
 }

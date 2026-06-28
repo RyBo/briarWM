@@ -22,6 +22,17 @@ import Testing
         #expect(Action.parse("toggle split") == .toggleSplit)
     }
 
+    @Test func layoutPresets() {
+        #expect(Action.parse("cycle layout") == .cycleLayout)
+        #expect(Action.parse("layout cycle") == .cycleLayout)
+        #expect(Action.parse("layout next") == .cycleLayout)
+        #expect(Action.parse("layout tiled") == .setLayout(.tiled))
+        #expect(Action.parse("layout main-vertical") == .setLayout(.mainVertical))
+        #expect(Action.parse("layout mv") == .setLayout(.mainVertical))
+        #expect(Action.parse("layout nonsense") == nil)
+        #expect(Action.parse("cycle") == nil)
+    }
+
     @Test func togglesAndModes() {
         #expect(Action.parse("toggle float") == .toggleFloat)
         #expect(Action.parse("focus mode toggle") == .focusModeToggle)

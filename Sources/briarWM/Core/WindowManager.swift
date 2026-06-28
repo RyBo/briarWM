@@ -425,6 +425,28 @@ final class WindowManager: AXEventSink {
         retile(tree)
     }
 
+    /// Snap the active desktop to the next preset in the configured cycle (tmux-style).
+    func cycleLayout() {
+        guard let (_, tree) = activeTarget() else { return }
+        guard let next = LayoutPreset.next(after: tree.layoutPreset, in: resolvedPresetCycle()) else { return }
+        tree.applyPreset(next, mainRatio: config.layout.mainRatio)
+        retile(tree)
+    }
+
+    /// Snap the active desktop to a specific preset (e.g. bound to `layout tiled`).
+    func setLayout(_ preset: LayoutPreset) {
+        guard let (_, tree) = activeTarget() else { return }
+        tree.applyPreset(preset, mainRatio: config.layout.mainRatio)
+        retile(tree)
+    }
+
+    /// The configured preset cycle, parsed to enum cases. Unknown tokens are dropped;
+    /// an empty/all-invalid list falls back to every preset so the hotkey always works.
+    private func resolvedPresetCycle() -> [LayoutPreset] {
+        let parsed = config.layout.presetCycle.compactMap(LayoutPreset.init(token:))
+        return parsed.isEmpty ? LayoutPreset.allCases : parsed
+    }
+
     func toggleFullscreen() {
         guard let (fid, tree) = activeTarget() else { return }
         zoomedID = (zoomedID == fid) ? nil : fid

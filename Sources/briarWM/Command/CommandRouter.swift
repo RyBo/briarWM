@@ -12,6 +12,8 @@ final class CommandRouter {
         case .resize(let d, let px): manager.resizeFocused(d, px)
         case .preselect(let o):   manager.preselect(o)
         case .toggleSplit:        manager.toggleSplit()
+        case .cycleLayout:        manager.cycleLayout()
+        case .setLayout(let p):   manager.setLayout(p)
         case .balance:            manager.balanceFocusedDisplay()
         case .fullscreen:         manager.toggleFullscreen()
         case .toggleFloat:        manager.toggleFloatFocused()

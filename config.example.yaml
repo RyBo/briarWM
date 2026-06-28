@@ -18,6 +18,10 @@ layout:
   focus_follows_mouse: false
   move_follows_focus: false   # `move workspace N`: follow the window to that desktop?
   space_poll_interval: 1.5    # seconds; backstop sweep for drag-to-desktop. 0 disables.
+  # `cycle layout` steps through these presets, in order, wrapping around.
+  # Presets: even-horizontal | even-vertical | main-vertical | main-horizontal | tiled
+  preset_cycle: [even-horizontal, even-vertical, main-vertical, main-horizontal, tiled]
+  main_ratio: 0.6             # main pane's screen fraction in the main-* presets
 
 # Named commands for `exec`. Change these to your terminal / launcher.
 exec:
@@ -45,6 +49,13 @@ keybindings:
   "alt+ctrl+h": "preselect horizontal"
   "alt+ctrl+v": "preselect vertical"
   "alt+e": "toggle split"
+
+  # snap the whole desktop to the next preset layout (tmux Ctrl-b Space style);
+  # order & main-pane width come from layout.preset_cycle / layout.main_ratio above
+  "alt+t": "cycle layout"
+  # or jump straight to one preset:
+  # "alt+ctrl+t": "layout tiled"
+  # "alt+ctrl+m": "layout main-vertical"
 
   # sizing — expands the focused window toward the named direction
   # (or shrinks it if that side is flush against the screen edge)
