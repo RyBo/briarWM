@@ -527,6 +527,20 @@ final class WindowManager: AXEventSink {
         let spaceDisplay = spaceDisplayMap()           // space → owning display, current layout
 
         var dirty: Set<SpaceID> = []
+
+        // Keep each tree on the display that currently owns its Space. Display ids and
+        // space→display assignments both drift across a monitor reconnect, and a stale
+        // `tree.display` silently breaks everything keyed off it: `isActive` (activeSpace is
+        // keyed by display), `retile` (the screen is keyed by display), and new-window
+        // placement. Re-pointing here makes the backstop poll self-heal what used to require
+        // a briarWM restart.
+        for tree in trees.values {
+            guard let d = spaceDisplay[tree.space], d != tree.display else { continue }
+            Log.logger.debug("re-point tree space \(tree.space): display \(tree.display) → \(d)")
+            tree.display = d
+            dirty.insert(tree.space)
+        }
+
         for tree in Array(trees.values) {                 // snapshot: we mutate `trees`
             for id in tree.windowIDs where !registry.isFloating(id) {
                 guard let element = registry.window(for: id)?.element,
