@@ -15,6 +15,22 @@ extension WindowManager {
     /// desktop. Every other caller (the backstop poll, app activation, display reconfig,
     /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
     /// steals OS keyboard focus out from under the user.
+    /// The timer-driven backstop reconcile. When the window server's structural state is
+    /// unchanged since the last tick — nothing appeared, closed, minimized, moved, or
+    /// switched desktops — skip the whole sweep, so an idle system costs one CG call per
+    /// tick instead of a per-app AX sweep. Notification-driven reconciles (Space switch,
+    /// app activation, display reconfig, wake) call `reconcileSpaces` directly and never
+    /// skip.
+    func pollReconcile() {
+        let snapshot = WindowServerSnapshot.capture()
+        if let snapshot, snapshot == lastPollSnapshot {
+            Log.logger.trace("poll: window server unchanged — skip reconcile")
+            return
+        }
+        lastPollSnapshot = snapshot
+        reconcileSpaces()
+    }
+
     func reconcileSpaces(moveFocus: Bool = false) {
         refreshActiveSpaces()                          // (1) keep activeSpace fresh
         passFrames = snapshotVisibleFrames()           // one AX read per window for the whole pass

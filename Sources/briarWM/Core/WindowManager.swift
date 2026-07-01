@@ -43,6 +43,9 @@ final class WindowManager: AXEventSink {
     /// at the end of the pass). nil outside a pass: every other retile path (commands,
     /// drag snap-back) must read live frames or snap-back breaks.
     var passFrames: [WinID: CGRect]?
+    /// The window-server fingerprint from the last poll tick — `pollReconcile()` skips
+    /// the full sweep when it hasn't changed.
+    var lastPollSnapshot: WindowServerSnapshot?
 
     var keymap: Keymap
     var currentMode = Keymap.defaultMode

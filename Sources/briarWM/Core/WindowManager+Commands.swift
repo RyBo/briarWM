@@ -20,10 +20,11 @@ extension WindowManager {
 
     func focusDirection(_ dir: Direction) {
         guard let (fid, tree) = activeTarget() else { return }
-        let visible = visibleFrames()
-        let frames = config.layout.focusWrapsMonitors
-            ? visible
-            : visible.filter { treeContaining($0.key)?.display == tree.display }
+        var frames: [WinID: CGRect] = [:]
+        for (t, id) in visibleTiledWindows()
+        where config.layout.focusWrapsMonitors || t.display == tree.display {
+            if let f = desiredFrames[id] { frames[id] = f }
+        }
         if let target = tree.adjacent(to: fid, direction: dir, frames: frames) {
             focus(windowID: target)
         }

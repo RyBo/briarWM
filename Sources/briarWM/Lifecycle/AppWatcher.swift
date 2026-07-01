@@ -63,11 +63,12 @@ final class AppWatcher {
 
         // Backstop: a Mission Control *drag-to-thumbnail* that doesn't switch the active
         // Space fires neither an AX nor a Space-change notification, so the source gap
-        // would otherwise linger. Poll to catch it (`space_poll_interval: 0` disables).
+        // would otherwise linger. Poll to catch it (`space_poll_interval: 0` disables;
+        // takes effect on restart). Idle ticks early-out on a window-server fingerprint.
         let interval = manager.config.layout.spacePollInterval
         if interval > 0 {
             pollTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-                self?.manager.reconcileSpaces()
+                self?.manager.pollReconcile()
             }
         }
     }
