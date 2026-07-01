@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard PermissionGate.isTrusted(prompt: false) else { return }
             timer.invalidate()
             Log.logger.info("Accessibility granted — relaunching")
-            self?.relaunch()
+            Relaunch.now()
         }
     }
 
@@ -57,13 +57,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             manager?.reload()
         }
         configWatcher?.start()
-    }
-
-    private func relaunch() {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        proc.arguments = Array(CommandLine.arguments.dropFirst())
-        try? proc.run()
-        NSApp.terminate(nil)
     }
 }

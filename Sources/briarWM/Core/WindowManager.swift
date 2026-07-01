@@ -131,14 +131,13 @@ final class WindowManager: AXEventSink {
         guard let axApp = apps[pid] else { return }
         axApp.stop()
         apps.removeValue(forKey: pid)
-        let ids = allTrees.flatMap { $0.windowIDs }.filter { registry.window(for: $0)?.pid == pid }
+        let tiled = allTrees.flatMap { $0.windowIDs }.filter { registry.window(for: $0)?.pid == pid }
+        let floated = registry.floating.filter { registry.window(for: $0)?.pid == pid }
         var changed: Set<SpaceID> = []
-        for id in ids {
-            if let tree = anyTreeContaining(id) { tree.remove(id); changed.insert(tree.space) }
-            registry.unregister(id)
-            desiredFrames.removeValue(forKey: id)
+        for id in tiled {
+            if let tree = forget(id) { changed.insert(tree.space) }
         }
-        parkedTrees.removeAll { $0.isEmpty }                       // drop parked trees emptied by the quit
+        floated.forEach { forget($0) }                             // floating windows must not leak either
         changed.forEach { if let t = trees[$0] { retile(t) } }     // only active trees apply frames
     }
 
@@ -208,6 +207,10 @@ final class WindowManager: AXEventSink {
     /// group, which share the exact same frame (0px). Kept tight so it tolerates rounding but
     /// stays well below macOS's ~20px cascade offset for genuinely *separate* new windows.
     private static let tabStackTolerance: CGFloat = 10
+    /// How far a tiled window may drift from its computed slot before it counts as a user
+    /// drag (→ snap back). Kept above `Tiler.applyTolerance` so the notification from our
+    /// own frame write landing never looks like a drag.
+    private static let snapBackTolerance: CGFloat = 3
 
     /// Adopt / rebind / skip every untracked tileable window of one app.
     ///
@@ -262,11 +265,9 @@ final class WindowManager: AXEventSink {
             return CFEqual(f, el)
         }
         var entries: [(id: WinID, tree: BSPTree, frame: CGRect)] = []
-        for tree in trees.values where isActive(tree) {
-            for id in tree.windowIDs where !registry.isFloating(id) {
-                guard let w = registry.window(for: id), w.pid == pid, let f = w.frame else { continue }
-                entries.append((id, tree, f))
-            }
+        for (tree, id) in visibleTiledWindows() {
+            guard let w = registry.window(for: id), w.pid == pid, let f = w.frame else { continue }
+            entries.append((id, tree, f))
         }
         var handled: Set<WinID> = []
         for i in entries.indices where !handled.contains(entries[i].id) {
@@ -284,11 +285,7 @@ final class WindowManager: AXEventSink {
             }
             for c in cluster where c.id != keep.id {
                 Log.logger.debug("tab dedup: drop stacked leaf \(c.id) (kept \(keep.id)) @ \(frameStr(c.frame))")
-                c.tree.remove(c.id)
-                registry.unregister(c.id)
-                desiredFrames.removeValue(forKey: c.id)
-                if zoomedID == c.id { zoomedID = nil }
-                if focusedID == c.id { focusedID = keep.id }
+                forget(c.id, tree: c.tree, newFocus: keep.id)
                 dirty.insert(c.tree.space)
             }
             dirty.insert(keep.tree.space)
@@ -309,11 +306,9 @@ final class WindowManager: AXEventSink {
     /// the group's frame), or nil if it sits on no existing tile — i.e. it's a standalone window.
     private func frameMatchLeaf(pid: pid_t, frame: CGRect?) -> WinID? {
         var leaves: [(id: WinID, frame: CGRect?)] = []
-        for tree in trees.values where isActive(tree) {
-            for id in tree.windowIDs where !registry.isFloating(id) {
-                guard let w = registry.window(for: id), w.pid == pid, !w.isMinimized else { continue }
-                leaves.append((id, w.frame ?? desiredFrames[id]))
-            }
+        for (_, id) in visibleTiledWindows() {
+            guard let w = registry.window(for: id), w.pid == pid, !w.isMinimized else { continue }
+            leaves.append((id, w.frame ?? desiredFrames[id]))
         }
         return nearestStackedLeaf(frame, among: leaves, tolerance: Self.tabStackTolerance)
     }
@@ -344,24 +339,15 @@ final class WindowManager: AXEventSink {
             for id in tree.windowIDs where !registry.isFloating(id) {
                 guard let w = registry.window(for: id), isDead(w) else { continue }
                 Log.logger.debug("reap dead window \(id)")
-                tree.remove(id)
-                registry.unregister(id)
-                desiredFrames.removeValue(forKey: id)
-                if zoomedID == id { zoomedID = nil }
-                if focusedID == id { focusedID = tree.focused }
+                forget(id, tree: tree)
                 dirty.insert(tree.space)
             }
         }
         for tree in parkedTrees {                          // parked trees leak too if dead-but-registered
             for id in tree.windowIDs where !registry.isFloating(id) {
-                if let w = registry.window(for: id), isDead(w) {
-                    tree.remove(id)
-                    registry.unregister(id)
-                    desiredFrames.removeValue(forKey: id)
-                }
+                if let w = registry.window(for: id), isDead(w) { forget(id, tree: tree) }
             }
         }
-        parkedTrees.removeAll { $0.isEmpty }
         return dirty
     }
 
@@ -391,6 +377,26 @@ final class WindowManager: AXEventSink {
     /// must reach a window wherever it lives so closed windows don't leak from a parked tree.
     private var allTrees: [BSPTree] { Array(trees.values) + parkedTrees }
     private func anyTreeContaining(_ id: WinID) -> BSPTree? { allTrees.first { $0.contains(id) } }
+
+    /// Remove every trace of a managed window: its leaf (in `tree`, or wherever it lives,
+    /// parked trees included), registry entry, desired frame, zoom/focus/sticky references,
+    /// and any parked tree the removal emptied. Returns the tree it was removed from so
+    /// callers can retile. `newFocus` overrides the fallback focus (the tree's remembered one).
+    /// Not for minimize — a minimized window must stay registered (`windowMinimized`).
+    @discardableResult
+    private func forget(_ id: WinID, tree: BSPTree? = nil, newFocus: WinID? = nil) -> BSPTree? {
+        let tree = tree ?? anyTreeContaining(id)
+        tree?.remove(id)
+        registry.unregister(id)
+        desiredFrames.removeValue(forKey: id)
+        stickyOnce.remove(id)
+        if zoomedID == id { zoomedID = nil }
+        if focusedID == id { focusedID = newFocus ?? tree?.focused }
+        pruneEmptyParkedTrees()
+        return tree
+    }
+
+    private func pruneEmptyParkedTrees() { parkedTrees.removeAll { $0.isEmpty } }
 
     /// space → owning display, from the current window-server layout. Empty when Space queries
     /// are unavailable. Drives both `reconcileSpaces` re-homing and parked-tree restoration.
@@ -434,13 +440,21 @@ final class WindowManager: AXEventSink {
         for d in screens.displayIDs where activeSpace[d] == nil { activeSpace[d] = pseudoSpace(d) }
     }
 
+    /// Every non-floating window on a visible desktop, paired with its tree — what tab
+    /// reconciliation and focus/move targeting iterate.
+    private func visibleTiledWindows() -> [(tree: BSPTree, id: WinID)] {
+        var out: [(tree: BSPTree, id: WinID)] = []
+        for tree in trees.values where isActive(tree) {
+            for id in tree.windowIDs where !registry.isFloating(id) { out.append((tree, id)) }
+        }
+        return out
+    }
+
     /// Desired frames restricted to windows on the visible desktops — the only windows
     /// that should be focus/move targets.
     private func visibleFrames() -> [WinID: CGRect] {
         var out: [WinID: CGRect] = [:]
-        for tree in trees.values where isActive(tree) {
-            for id in tree.windowIDs { if let f = desiredFrames[id] { out[id] = f } }
-        }
+        for (_, id) in visibleTiledWindows() { if let f = desiredFrames[id] { out[id] = f } }
         return out
     }
 
@@ -458,6 +472,15 @@ final class WindowManager: AXEventSink {
     // MARK: - Tiling
 
     func retileAll() { trees.values.forEach { retile($0) } }
+
+    /// Retile the given Spaces plus every visible one — the visible pass applies frames
+    /// that were only computed while their desktop was hidden (e.g. a window that
+    /// arrived off-screen).
+    private func retileDirtyAndVisible(_ dirty: Set<SpaceID>) {
+        var toRetile = dirty
+        for tree in trees.values where isActive(tree) { toRetile.insert(tree.space) }
+        toRetile.forEach { if let t = trees[$0] { retile(t) } }
+    }
 
     /// Recompute `tree`'s frames and record them. Apply them to real windows only when
     /// the tree's Space is currently visible (`isActive`) — or `force`d, used to pre-size
@@ -500,13 +523,7 @@ final class WindowManager: AXEventSink {
             retile(tree)
             return
         }
-        let tree = anyTreeContaining(id)               // could be parked (its monitor is asleep)
-        tree?.remove(id)
-        registry.unregister(id)
-        desiredFrames.removeValue(forKey: id)
-        if zoomedID == id { zoomedID = nil }
-        if focusedID == id { focusedID = tree?.focused }
-        parkedTrees.removeAll { $0.isEmpty }
+        let tree = forget(id)                          // could be parked (its monitor is asleep)
         if let tree { retile(tree) }                   // no-op for a parked tree (display gone)
     }
 
@@ -522,7 +539,7 @@ final class WindowManager: AXEventSink {
         desiredFrames.removeValue(forKey: id)          // stop applying a stale frame
         if zoomedID == id { zoomedID = nil }
         if focusedID == id { focusedID = tree.focused }
-        parkedTrees.removeAll { $0.isEmpty }
+        pruneEmptyParkedTrees()
         Log.logger.debug("minimize park \(id)")
         retile(tree)
     }
@@ -567,7 +584,7 @@ final class WindowManager: AXEventSink {
               let desired = desiredFrames[id],
               let current = registry.window(for: id)?.frame else { return }
         // If a tiled window drifted from its computed slot, the user dragged it: snap back.
-        if !rectsApproxEqual(current, desired, 3) { retile(tree) }
+        if !rectsApproxEqual(current, desired, Self.snapBackTolerance) { retile(tree) }
     }
 
     func screensChanged() {
@@ -773,13 +790,7 @@ final class WindowManager: AXEventSink {
         Log.logger.info("config reloaded")
     }
 
-    func restart() {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        proc.arguments = Array(CommandLine.arguments.dropFirst())
-        try? proc.run()
-        NSApp.terminate(nil)
-    }
+    func restart() { Relaunch.now() }
 
     func enterMode(_ name: String) {
         guard keymap.hasMode(name) else { return }
@@ -827,9 +838,7 @@ final class WindowManager: AXEventSink {
         dirty.formUnion(reapDeadWindows())
 
         guard spaces.isAvailable else {                // pseudo-Space mode: just apply adoptions
-            var toRetile = dirty
-            for tree in trees.values where isActive(tree) { toRetile.insert(tree.space) }
-            toRetile.forEach { if let t = trees[$0] { retile(t) } }
+            retileDirtyAndVisible(dirty)
             return
         }
 
@@ -878,11 +887,7 @@ final class WindowManager: AXEventSink {
             }
         }
 
-        // Retile changed trees plus every visible one (to apply frames that were only
-        // computed while their desktop was hidden, e.g. a window that arrived off-screen).
-        var toRetile = dirty
-        for tree in trees.values where isActive(tree) { toRetile.insert(tree.space) }
-        toRetile.forEach { if let t = trees[$0] { retile(t) } }
+        retileDirtyAndVisible(dirty)
         repairFocusCache(moveFocus: moveFocus)
     }
 
