@@ -61,6 +61,10 @@ final class WindowManager: AXEventSink {
     /// have their frames applied to real windows.
     private var activeSpace: [DisplayID: SpaceID] = [:]
     private var desiredFrames: [WinID: CGRect] = [:]
+    /// Windows seen on multiple Spaces once. Floating a window as "sticky" needs two
+    /// consecutive observations — one transient multi-Space read (mid-animation, Mission
+    /// Control) must not permanently pull a tiled window out of its tree.
+    private var stickyOnce: Set<WinID> = []
 
     private var keymap: Keymap
     private var currentMode = Keymap.defaultMode
@@ -849,13 +853,16 @@ final class WindowManager: AXEventSink {
                 guard let element = registry.window(for: id)?.element,
                       let wid = spaces.cgWindowID(for: element) else { continue }
                 let ids = spaces.spaceIDs(for: wid)
-                if ids.count > 1 {                        // became sticky → float it
+                if ids.count > 1 {                        // sticky twice in a row → float it
+                    guard stickyOnce.contains(id) else { stickyOnce.insert(id); continue }
+                    stickyOnce.remove(id)
                     tree.remove(id)
                     registry.setFloating(id, true)
                     if focusedID == id { focusedID = tree.focused }
                     dirty.insert(tree.space)
                     continue
                 }
+                stickyOnce.remove(id)
                 guard let real = ids.first, real != tree.space else { continue }
                 // If this fires every tick for windows you never moved, the window-server's
                 // window→Space numbering disagrees with the managed-space dict key — see
