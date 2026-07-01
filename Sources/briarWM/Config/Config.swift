@@ -84,6 +84,10 @@ struct LayoutOptions: Decodable, Equatable {
     /// visible tab, instead of tiling every background tab separately. Default true; set
     /// false to fall back to the old one-tile-per-window behavior.
     var manageTabbedWindows: Bool
+    /// When true, minimizing a window removes it from the tiling and reflows the
+    /// remaining windows to fill the space (restored on un-minimize) — matching
+    /// yabai/Amethyst/AeroSpace. Default true; set false to leave the window's slot empty.
+    var reflowOnMinimize: Bool
 
     /// Default `cycle layout` order: the full tmux preset set.
     static let defaultPresetCycle = ["even-horizontal", "even-vertical",
@@ -98,7 +102,8 @@ struct LayoutOptions: Decodable, Equatable {
          spacePollInterval: Double = 1.5,
          presetCycle: [String] = LayoutOptions.defaultPresetCycle,
          mainRatio: Double = 0.6,
-         manageTabbedWindows: Bool = true) {
+         manageTabbedWindows: Bool = true,
+         reflowOnMinimize: Bool = true) {
         self.defaultRatio = defaultRatio
         self.insertAt = insertAt
         self.autoSplit = autoSplit
@@ -109,6 +114,7 @@ struct LayoutOptions: Decodable, Equatable {
         self.presetCycle = presetCycle
         self.mainRatio = mainRatio
         self.manageTabbedWindows = manageTabbedWindows
+        self.reflowOnMinimize = reflowOnMinimize
     }
 
     enum CodingKeys: String, CodingKey {
@@ -122,6 +128,7 @@ struct LayoutOptions: Decodable, Equatable {
         case presetCycle = "preset_cycle"
         case mainRatio = "main_ratio"
         case manageTabbedWindows = "manage_tabbed_windows"
+        case reflowOnMinimize = "reflow_on_minimize"
     }
 
     init(from decoder: Decoder) throws {
@@ -136,6 +143,7 @@ struct LayoutOptions: Decodable, Equatable {
         presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? LayoutOptions.defaultPresetCycle
         mainRatio = try c.decodeIfPresent(Double.self, forKey: .mainRatio) ?? 0.6
         manageTabbedWindows = try c.decodeIfPresent(Bool.self, forKey: .manageTabbedWindows) ?? true
+        reflowOnMinimize = try c.decodeIfPresent(Bool.self, forKey: .reflowOnMinimize) ?? true
     }
 }
 

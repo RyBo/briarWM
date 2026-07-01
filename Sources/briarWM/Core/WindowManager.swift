@@ -148,7 +148,13 @@ final class WindowManager: AXEventSink {
             Log.logger.debug("float \(id) \(window.title ?? "?")")
             return
         }
+        insertManaged(id: id, window: window, retile: doRetile, focus: focus)
+    }
 
+    /// Insert an already-registered, non-floating window into its current Space's tree and
+    /// (optionally) retile. Sticky windows (spanning every desktop) are floated instead.
+    /// Shared by `considerWindow` (first adoption) and `windowDeminimized` (restore from minimize).
+    private func insertManaged(id: WinID, window: AXWindow, retile doRetile: Bool, focus: Bool) {
         let display = displayForWindow(window)
         let (space, sticky) = resolveSpace(window, display: display)
         if sticky {   // spans every desktop — can't live in a single tree.
@@ -495,6 +501,38 @@ final class WindowManager: AXEventSink {
         if focusedID == id { focusedID = tree?.focused }
         parkedTrees.removeAll { $0.isEmpty }
         if let tree { retile(tree) }                   // no-op for a parked tree (display gone)
+    }
+
+    /// A tiled window was minimized: remove it from its tree and reflow the rest so no empty
+    /// slot is left (like a close, but the window stays registered and parked in
+    /// `registry.minimized` for `windowDeminimized` to restore). Gated by `reflow_on_minimize`.
+    func windowMinimized(_ element: AXUIElement, pid: pid_t) {
+        guard config.layout.reflowOnMinimize else { return }
+        guard let id = registry.id(for: element), !registry.isFloating(id) else { return }
+        guard let tree = anyTreeContaining(id) else { return }   // already out of a tree → nothing to do
+        tree.remove(id)
+        registry.setMinimized(id, true)
+        desiredFrames.removeValue(forKey: id)          // stop applying a stale frame
+        if zoomedID == id { zoomedID = nil }
+        if focusedID == id { focusedID = tree.focused }
+        parkedTrees.removeAll { $0.isEmpty }
+        Log.logger.debug("minimize park \(id)")
+        retile(tree)
+    }
+
+    /// A window was un-minimized: re-insert it into its current Space's tree and reflow.
+    /// A window we never managed (created minimized, or reflow was off when it minimized)
+    /// hits the `id == nil` branch and is adopted fresh.
+    func windowDeminimized(_ element: AXUIElement, pid: pid_t) {
+        guard let id = registry.id(for: element) else {
+            considerWindow(element, pid: pid, retile: true, focus: true)
+            return
+        }
+        guard registry.isMinimized(id) else { return }   // not one we parked (e.g. a floating window)
+        registry.setMinimized(id, false)
+        guard let window = registry.window(for: id) else { return }
+        Log.logger.debug("deminimize restore \(id)")
+        insertManaged(id: id, window: window, retile: true, focus: true)
     }
 
     func focusChanged(pid: pid_t) { refreshFocus(pid: pid) }

@@ -14,6 +14,10 @@ final class WindowRegistry {
     private var byID: [WinID: AXWindow] = [:]
     private var idByElement: [AXElementKey: WinID] = [:]
     private(set) var floating: Set<WinID> = []
+    /// Windows removed from their tree because they were minimized (see `reflow_on_minimize`).
+    /// Kept registered so they aren't re-adopted as new windows, and re-inserted on un-minimize.
+    /// Distinct from `AXWindow.isMinimized`, which reads the live AX attribute.
+    private(set) var minimized: Set<WinID> = []
 
     func id(for element: AXUIElement) -> WinID? {
         idByElement[AXElementKey(element: element)]
@@ -49,6 +53,7 @@ final class WindowRegistry {
         if let w = byID[id] { idByElement.removeValue(forKey: AXElementKey(element: w.element)) }
         byID.removeValue(forKey: id)
         floating.remove(id)
+        minimized.remove(id)
     }
 
     func window(for id: WinID) -> AXWindow? { byID[id] }
@@ -57,4 +62,9 @@ final class WindowRegistry {
         if flag { floating.insert(id) } else { floating.remove(id) }
     }
     func isFloating(_ id: WinID) -> Bool { floating.contains(id) }
+
+    func setMinimized(_ id: WinID, _ flag: Bool) {
+        if flag { minimized.insert(id) } else { minimized.remove(id) }
+    }
+    func isMinimized(_ id: WinID) -> Bool { minimized.contains(id) }
 }

@@ -39,6 +39,11 @@ import Foundation
         #expect(!(try decode(#"{ "layout": { "manage_tabbed_windows": false } }"#).layout.manageTabbedWindows))
     }
 
+    @Test func reflowOnMinimizeDecodes() throws {
+        #expect(try decode("{}").layout.reflowOnMinimize)                                     // default true
+        #expect(!(try decode(#"{ "layout": { "reflow_on_minimize": false } }"#).layout.reflowOnMinimize))
+    }
+
     @Test func partialConfigMergesDefaults() throws {
         let c = try decode(#"{ "modifier": "cmd", "gaps": { "inner": 4 } }"#)
         #expect(c.modifier == "cmd")

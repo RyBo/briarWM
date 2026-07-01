@@ -5,6 +5,8 @@ import CoreGraphics
 protocol AXEventSink: AnyObject {
     func windowCreated(_ element: AXUIElement, pid: pid_t)
     func windowDestroyed(_ element: AXUIElement, pid: pid_t)
+    func windowMinimized(_ element: AXUIElement, pid: pid_t)
+    func windowDeminimized(_ element: AXUIElement, pid: pid_t)
     func focusChanged(pid: pid_t)
     func windowMovedOrResized(_ element: AXUIElement, pid: pid_t)
     func appActivated(pid: pid_t)
@@ -83,6 +85,10 @@ final class AXApplication {
             sink?.windowCreated(element, pid: pid)
         case kAXUIElementDestroyedNotification:
             sink?.windowDestroyed(element, pid: pid)
+        case kAXWindowMiniaturizedNotification:
+            sink?.windowMinimized(element, pid: pid)
+        case kAXWindowDeminiaturizedNotification:
+            sink?.windowDeminimized(element, pid: pid)
         case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
             sink?.focusChanged(pid: pid)
         case kAXWindowMovedNotification, kAXWindowResizedNotification:
@@ -102,6 +108,8 @@ final class AXApplication {
     ]
     private static let windowNotifications: [String] = [
         kAXUIElementDestroyedNotification,
+        kAXWindowMiniaturizedNotification,
+        kAXWindowDeminiaturizedNotification,
         kAXWindowMovedNotification,
         kAXWindowResizedNotification,
     ]

@@ -20,6 +20,8 @@ layout:
   space_poll_interval: 1.5    # seconds; backstop sweep for drag-to-desktop. 0 disables.
   manage_tabbed_windows: true # treat native macOS tabs (e.g. Ghostty) as one tile that
                               # follows the visible tab; false = one tile per tab window
+  reflow_on_minimize: true    # minimizing a window reflows the rest to fill the space
+                              # (restored on un-minimize); false leaves its slot empty
   # `cycle layout` steps through these presets, in order, wrapping around.
   # Presets: even-horizontal | even-vertical | main-vertical | main-horizontal | tiled
   preset_cycle: [even-horizontal, even-vertical, main-vertical, main-horizontal, tiled]

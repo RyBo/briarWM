@@ -21,6 +21,8 @@ everything is driven by a YAML file and i3-style keybindings.
 - **Multi-monitor** — one BSP tree per (display, desktop); tiles the active Space per display.
 - **Resize** (direct + a modal resize mode), **balance**, **toggle split orientation**,
   **fullscreen (zoom)**, **floating** windows + per-app float rules.
+- **Minimize reflows** — minimizing a window fills its space with the rest and restores it
+  on un-minimize (toggle `reflow_on_minimize`, default on).
 - **YAML config with hot reload** — edit and save; changes apply instantly.
 - Menu-bar status item; runs as a background accessory (no Dock icon).
 
