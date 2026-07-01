@@ -16,11 +16,9 @@ import Foundation
         #expect(c.modifier == "alt")
         #expect(c.gaps.inner == 10)
         #expect(c.gaps.outer == 6)
-        #expect(c.gaps.mode == "simple")
         #expect(c.layout.defaultRatio == 0.5)
         #expect(c.layout.insertAt == "after")
         #expect(c.layout.focusWrapsMonitors)
-        #expect(!c.layout.focusFollowsMouse)
         #expect(c.layout.presetCycle == LayoutOptions.defaultPresetCycle)
         #expect(c.layout.mainRatio == 0.6)
         #expect(c.layout.manageTabbedWindows)
@@ -54,7 +52,7 @@ import Foundation
     @Test func snakeCaseKeysAndNestedStructures() throws {
         let c = try decode("""
         {
-          "layout": { "default_ratio": 0.6, "insert_at": "before", "focus_follows_mouse": true },
+          "layout": { "default_ratio": 0.6, "insert_at": "before" },
           "keybindings": { "alt+h": "focus left" },
           "floating": { "bundle_ids": ["com.apple.systempreferences"], "title_regex": [".*Settings$"] },
           "rules": [ { "match": { "bundle_id": "us.zoom.xos" }, "floating": true } ]
@@ -62,12 +60,28 @@ import Foundation
         """)
         #expect(c.layout.defaultRatio == 0.6)
         #expect(c.layout.insertAt == "before")
-        #expect(c.layout.focusFollowsMouse)
         #expect(c.keybindings["alt+h"] == "focus left")
         #expect(c.floating.bundleIds == ["com.apple.systempreferences"])
         #expect(c.floating.titleRegex == [".*Settings$"])
         #expect(c.rules.count == 1)
         #expect(c.rules.first?.match.bundleId == "us.zoom.xos")
         #expect(c.rules.first?.floating == true)
+    }
+
+    @Test func matchRequiresEverySpecifiedCriterion() {
+        let both = Match(bundleId: "com.example.app", titleRegex: "^Palette")
+        #expect(both.matches(bundleID: "com.example.app", title: "Palette — Tools"))
+        #expect(!both.matches(bundleID: "com.example.app", title: "Document"))
+        #expect(!both.matches(bundleID: "com.other.app", title: "Palette — Tools"))
+
+        let byBundle = Match(bundleId: "com.example.app", titleRegex: nil)
+        #expect(byBundle.matches(bundleID: "com.example.app", title: nil))
+
+        let byTitle = Match(bundleId: nil, titleRegex: "Settings$")
+        #expect(byTitle.matches(bundleID: nil, title: "App Settings"))
+        #expect(!byTitle.matches(bundleID: nil, title: nil))
+
+        let empty = Match(bundleId: nil, titleRegex: nil)
+        #expect(!empty.matches(bundleID: "com.example.app", title: "anything"))
     }
 }

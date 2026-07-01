@@ -169,7 +169,8 @@ final class WindowManager: AXEventSink {
         let focusedFrame = tree.focused.flatMap { desiredFrames[$0] } ?? window.frame
         tree.insert(id, focusedFrame: focusedFrame,
                     insertAt: InsertAt(rawValue: config.layout.insertAt) ?? .after,
-                    autoSplit: config.layout.autoSplit)
+                    autoSplit: config.layout.autoSplit,
+                    ratio: config.layout.defaultRatio)
         if focus { focusedID = id }
         Log.logger.debug("tile \(id) \(window.title ?? "?") on display \(display) space \(space)")
         if doRetile { retile(tree) }
@@ -183,13 +184,12 @@ final class WindowManager: AXEventSink {
 
     private func shouldFloat(_ window: AXWindow, pid: pid_t) -> Bool {
         let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
-        if let bundleID {
-            if config.floating.bundleIds.contains(bundleID) { return true }
-            for rule in config.rules where rule.match.bundleId == bundleID {
-                if let f = rule.floating { return f }
-            }
+        let title = window.title
+        if let bundleID, config.floating.bundleIds.contains(bundleID) { return true }
+        for rule in config.rules where rule.match.matches(bundleID: bundleID, title: title) {
+            if let f = rule.floating { return f }
         }
-        if let title = window.title {
+        if let title {
             for pattern in config.floating.titleRegex where title.range(of: pattern, options: .regularExpression) != nil {
                 return true
             }
@@ -608,7 +608,9 @@ final class WindowManager: AXEventSink {
         guard !tree.isEmpty else { return }
         tree.display = display
         if let existing = trees[tree.space], existing !== tree {
-            for id in tree.windowIDs { existing.insert(id, focusedFrame: nil) }
+            for id in tree.windowIDs {
+                existing.insert(id, focusedFrame: nil, ratio: config.layout.defaultRatio)
+            }
         } else {
             trees[tree.space] = tree
         }
@@ -649,7 +651,7 @@ final class WindowManager: AXEventSink {
             retile(tree)
         } else {
             tree.remove(fid)
-            targetTree.insert(fid, focusedFrame: desiredFrames[target])
+            targetTree.insert(fid, focusedFrame: desiredFrames[target], ratio: config.layout.defaultRatio)
             targetTree.focused = fid
             focusedID = fid
             retile(tree)
@@ -716,7 +718,8 @@ final class WindowManager: AXEventSink {
             let space = registry.window(for: fid).map { resolveSpace($0, display: display).space }
                 ?? activeSpace[display] ?? pseudoSpace(display)
             let tree = ensureTree(space: space, display: display)
-            tree.insert(fid, focusedFrame: tree.focused.flatMap { desiredFrames[$0] })
+            tree.insert(fid, focusedFrame: tree.focused.flatMap { desiredFrames[$0] },
+                        ratio: config.layout.defaultRatio)
             retile(tree)
         } else if let tree = treeContaining(fid) {
             tree.remove(fid)
@@ -860,7 +863,8 @@ final class WindowManager: AXEventSink {
                 Log.logger.debug("reconcile: \(id) moved space \(tree.space) → \(real)")
                 tree.remove(id)
                 let dst = ensureTree(space: real, display: spaceDisplay[real] ?? tree.display)
-                dst.insert(id, focusedFrame: dst.focused.flatMap { desiredFrames[$0] })
+                dst.insert(id, focusedFrame: dst.focused.flatMap { desiredFrames[$0] },
+                           ratio: config.layout.defaultRatio)
                 if focusedID == id { focusedID = tree.focused }
                 dirty.insert(tree.space)
                 dirty.insert(real)
@@ -899,7 +903,8 @@ final class WindowManager: AXEventSink {
         srcTree.remove(fid)
         if focusedID == fid { focusedID = srcTree.focused }
         let dst = ensureTree(space: target, display: display)
-        dst.insert(fid, focusedFrame: dst.focused.flatMap { desiredFrames[$0] })
+        dst.insert(fid, focusedFrame: dst.focused.flatMap { desiredFrames[$0] },
+                   ratio: config.layout.defaultRatio)
         retile(srcTree)                                   // active source → gap closes
         retile(dst, force: true)                          // size it even though off-screen
         if config.layout.moveFollowsFocus { switchToDesktop(index) }

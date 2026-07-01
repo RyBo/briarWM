@@ -18,6 +18,14 @@ import Foundation
         #expect(o2 == .vertical)
     }
 
+    @Test func insertUsesConfiguredRatio() {
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 400), ratio: 0.7)
+        guard case .split(_, let ratio, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
+        #expect(ratio == 0.7)   // the existing window keeps 70%, the new one gets 30%
+    }
+
     @Test func preselectOverridesAndClears() {
         let t = BSPTree(display: 1)
         t.insert(WinID(1))

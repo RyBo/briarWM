@@ -42,19 +42,17 @@ struct Config: Decodable, Equatable {
 }
 
 struct Gaps: Decodable, Equatable {
-    var mode: String      // "simple" | "i3"
     var inner: CGFloat
     var outer: CGFloat
 
-    init(mode: String = "simple", inner: CGFloat = 10, outer: CGFloat = 6) {
-        self.mode = mode; self.inner = inner; self.outer = outer
+    init(inner: CGFloat = 10, outer: CGFloat = 6) {
+        self.inner = inner; self.outer = outer
     }
 
-    enum CodingKeys: String, CodingKey { case mode, inner, outer }
+    enum CodingKeys: String, CodingKey { case inner, outer }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? "simple"
         inner = try c.decodeIfPresent(CGFloat.self, forKey: .inner) ?? 10
         outer = try c.decodeIfPresent(CGFloat.self, forKey: .outer) ?? 6
     }
@@ -65,7 +63,6 @@ struct LayoutOptions: Decodable, Equatable {
     var insertAt: String        // "after" | "before"
     var autoSplit: String       // "longer_edge" | "horizontal" | "vertical"
     var focusWrapsMonitors: Bool
-    var focusFollowsMouse: Bool
     /// When true, `move workspace N` follows the window to that desktop. Default false
     /// (matches i3's "move container to workspace").
     var moveFollowsFocus: Bool
@@ -97,7 +94,6 @@ struct LayoutOptions: Decodable, Equatable {
          insertAt: String = "after",
          autoSplit: String = "longer_edge",
          focusWrapsMonitors: Bool = true,
-         focusFollowsMouse: Bool = false,
          moveFollowsFocus: Bool = false,
          spacePollInterval: Double = 1.5,
          presetCycle: [String] = LayoutOptions.defaultPresetCycle,
@@ -108,7 +104,6 @@ struct LayoutOptions: Decodable, Equatable {
         self.insertAt = insertAt
         self.autoSplit = autoSplit
         self.focusWrapsMonitors = focusWrapsMonitors
-        self.focusFollowsMouse = focusFollowsMouse
         self.moveFollowsFocus = moveFollowsFocus
         self.spacePollInterval = spacePollInterval
         self.presetCycle = presetCycle
@@ -122,7 +117,6 @@ struct LayoutOptions: Decodable, Equatable {
         case insertAt = "insert_at"
         case autoSplit = "auto_split"
         case focusWrapsMonitors = "focus_wraps_monitors"
-        case focusFollowsMouse = "focus_follows_mouse"
         case moveFollowsFocus = "move_follows_focus"
         case spacePollInterval = "space_poll_interval"
         case presetCycle = "preset_cycle"
@@ -137,7 +131,6 @@ struct LayoutOptions: Decodable, Equatable {
         insertAt = try c.decodeIfPresent(String.self, forKey: .insertAt) ?? "after"
         autoSplit = try c.decodeIfPresent(String.self, forKey: .autoSplit) ?? "longer_edge"
         focusWrapsMonitors = try c.decodeIfPresent(Bool.self, forKey: .focusWrapsMonitors) ?? true
-        focusFollowsMouse = try c.decodeIfPresent(Bool.self, forKey: .focusFollowsMouse) ?? false
         moveFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .moveFollowsFocus) ?? false
         spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? 1.5
         presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? LayoutOptions.defaultPresetCycle
@@ -170,7 +163,6 @@ struct FloatingRules: Decodable, Equatable {
 struct AppRule: Decodable, Equatable {
     var match: Match
     var floating: Bool?
-    var manage: Bool?
 }
 
 struct Match: Decodable, Equatable {
@@ -180,5 +172,16 @@ struct Match: Decodable, Equatable {
     enum CodingKeys: String, CodingKey {
         case bundleId = "bundle_id"
         case titleRegex = "title_regex"
+    }
+
+    /// True when every criterion the rule specifies matches. A criterion left unset is
+    /// ignored; a match with no criteria matches nothing (a rule must select something).
+    func matches(bundleID: String?, title: String?) -> Bool {
+        guard bundleId != nil || titleRegex != nil else { return false }
+        if let want = bundleId, want != bundleID { return false }
+        if let pattern = titleRegex {
+            guard let title, title.range(of: pattern, options: .regularExpression) != nil else { return false }
+        }
+        return true
     }
 }

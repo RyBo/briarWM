@@ -40,11 +40,13 @@ final class BSPTree {
     /// Insert `win` by splitting the focused leaf (bspwm "automatic" mode).
     /// `focusedFrame` is the current rect of the focused window, used to pick the
     /// split orientation along its longer edge when no preselection is set.
+    /// `ratio` is the new split's share for its first child (config `default_ratio`).
     @discardableResult
     func insert(_ win: WinID,
                 focusedFrame: CGRect? = nil,
                 insertAt: InsertAt = .after,
-                autoSplit: String = "longer_edge") -> Bool {
+                autoSplit: String = "longer_edge",
+                ratio: Double = 0.5) -> Bool {
         guard root != nil else {
             root = BSPNode(leaf: win)
             focused = win
@@ -65,7 +67,7 @@ final class BSPTree {
         let oldLeaf = BSPNode(leaf: oldWin)
         let newLeaf = BSPNode(leaf: win)
         let (first, second) = (insertAt == .after) ? (oldLeaf, newLeaf) : (newLeaf, oldLeaf)
-        let split = BSPNode(split: orientation, ratio: 0.5, first: first, second: second)
+        let split = BSPNode(split: orientation, ratio: ratio, first: first, second: second)
         replace(target, with: split)
         focused = win
         return true

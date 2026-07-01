@@ -6,16 +6,14 @@
 modifier: alt
 
 gaps:
-  mode: simple        # simple: outer = screen margin, inner = between windows
-  inner: 10
-  outer: 6
+  inner: 10           # between windows
+  outer: 6            # screen margin
 
 layout:
-  default_ratio: 0.5
+  default_ratio: 0.5        # new split's share for the existing window (0–1)
   insert_at: after          # where a new window lands relative to the focused one
   auto_split: longer_edge   # longer_edge | horizontal | vertical
   focus_wraps_monitors: true
-  focus_follows_mouse: false
   move_follows_focus: false   # `move workspace N`: follow the window to that desktop?
   space_poll_interval: 1.5    # seconds; backstop sweep for drag-to-desktop. 0 disables.
   manage_tabbed_windows: true # treat native macOS tabs (e.g. Ghostty) as one tile that
@@ -118,7 +116,10 @@ floating:
     - "^Preferences$"
     - ".*Settings$"
 
-# Per-app overrides (force-float apps that refuse resizing).
+# Per-app overrides (force-float apps that refuse resizing). A rule may match by
+# bundle_id, title_regex, or both (both must match when both are given).
 rules:
   - match: { bundle_id: "us.zoom.xos" }
     floating: true
+  # - match: { bundle_id: "com.example.app", title_regex: "^Palette" }
+  #   floating: true
