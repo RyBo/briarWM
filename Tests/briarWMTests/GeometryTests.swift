@@ -4,28 +4,21 @@ import Foundation
 
 @Suite struct GeometryTests {
 
-    @Test func roundTripPrimary() {
+    @Test func flipsAroundPrimaryHeight() {
         let h: CGFloat = 1080
         let cocoa = CGRect(x: 100, y: 200, width: 400, height: 300)
         let ax = Geometry.cocoaToAX(cocoa, primaryHeight: h)
         #expect(approx(ax.minX, 100))
         #expect(approx(ax.minY, h - cocoa.maxY))     // top = H - cocoa.maxY
-        #expect(rectApprox(Geometry.axToCocoa(ax, primaryHeight: h), cocoa))
+        #expect(approx(ax.width, 400) && approx(ax.height, 300))
     }
 
-    @Test func secondaryDisplayNegativeOrigin() {
+    @Test func transformIsItsOwnInverse() {
         let h: CGFloat = 1080
-        let cocoa = CGRect(x: -1920, y: 0, width: 1920, height: 1200)
-        let ax = Geometry.cocoaToAX(cocoa, primaryHeight: h)
-        #expect(approx(ax.minX, -1920))              // negative X preserved
-        #expect(rectApprox(Geometry.axToCocoa(ax, primaryHeight: h), cocoa))
-    }
-
-    @Test func pointConversion() {
-        let h: CGFloat = 900
-        let p = CGPoint(x: 50, y: 100)
-        let ax = Geometry.cocoaToAX(p, primaryHeight: h)
-        #expect(approx(ax.y, 800))
-        #expect(approx(Geometry.axToCocoa(ax, primaryHeight: h).y, 100))
+        for rect in [CGRect(x: 100, y: 200, width: 400, height: 300),
+                     CGRect(x: -1920, y: 0, width: 1920, height: 1200)] {   // secondary display
+            let twice = Geometry.cocoaToAX(Geometry.cocoaToAX(rect, primaryHeight: h), primaryHeight: h)
+            #expect(rectApprox(twice, rect))
+        }
     }
 }

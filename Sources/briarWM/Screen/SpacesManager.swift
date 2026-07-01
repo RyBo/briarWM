@@ -183,6 +183,11 @@ final class SpacesManager {
     /// cooperative-activation model routinely refuses it (and the old `.activateIgnoringOtherApps`
     /// option is a no-op). Returns false — caller should fall back to AX + `activate()` — when
     /// the symbols or the process serial number can't be resolved.
+    ///
+    /// ⚠️ If cross-app focus silently breaks on a future macOS, suspect the event-record
+    /// byte layout below first: the symbols would still resolve (so no guard can catch it)
+    /// while the window server ignores records it no longer understands. Compare against
+    /// yabai's current offsets before debugging anything else.
     @discardableResult
     func raiseAndFocus(_ element: AXUIElement, pid: pid_t) -> Bool {
         guard let getProcessForPID, let setFrontProcess, let postEventRecord else { return false }

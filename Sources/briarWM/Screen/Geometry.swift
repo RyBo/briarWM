@@ -9,29 +9,13 @@ import CoreGraphics
 /// — i.e. `NSScreen.screens.first`, NOT `NSScreen.main`.
 enum Geometry {
 
-    /// Cocoa rect → AX rect. The transform is its own inverse for rectangles.
+    /// Cocoa rect → AX rect. The flip is its own inverse, so this one function covers
+    /// both directions (production only ever converts Cocoa → AX, once, at the
+    /// NSScreen boundary in `ScreenManager`).
     static func cocoaToAX(_ rect: CGRect, primaryHeight: CGFloat) -> CGRect {
         CGRect(x: rect.minX,
                y: primaryHeight - rect.maxY,
                width: rect.width,
                height: rect.height)
-    }
-
-    /// AX rect → Cocoa rect.
-    static func axToCocoa(_ rect: CGRect, primaryHeight: CGFloat) -> CGRect {
-        CGRect(x: rect.minX,
-               y: primaryHeight - rect.maxY,
-               width: rect.width,
-               height: rect.height)
-    }
-
-    /// Cocoa point → AX point.
-    static func cocoaToAX(_ point: CGPoint, primaryHeight: CGFloat) -> CGPoint {
-        CGPoint(x: point.x, y: primaryHeight - point.y)
-    }
-
-    /// AX point → Cocoa point.
-    static func axToCocoa(_ point: CGPoint, primaryHeight: CGFloat) -> CGPoint {
-        CGPoint(x: point.x, y: primaryHeight - point.y)
     }
 }
