@@ -17,6 +17,8 @@ extension WindowManager {
     /// steals OS keyboard focus out from under the user.
     func reconcileSpaces(moveFocus: Bool = false) {
         refreshActiveSpaces()                          // (1) keep activeSpace fresh
+        passFrames = snapshotVisibleFrames()           // one AX read per window for the whole pass
+        defer { passFrames = nil }
         var dirty: Set<SpaceID> = []
 
         // (2) Tab-aware discover/adopt/rebind/skip for every app: picks up windows whose
@@ -107,6 +109,16 @@ extension WindowManager {
         let ids = spaces.spaceIDs(for: wid)
         if ids.count > 1 { return (pseudoSpace(display), true) }
         return (ids.first ?? pseudoSpace(display), false)
+    }
+
+    /// One live AX frame read per visible tiled window — the pass snapshot backing
+    /// `currentFrame(_:)` for the duration of a reconcile pass.
+    private func snapshotVisibleFrames() -> [WinID: CGRect] {
+        var out: [WinID: CGRect] = [:]
+        for (_, id) in visibleTiledWindows() {
+            if let f = registry.window(for: id)?.frame { out[id] = f }
+        }
+        return out
     }
 
     /// space → owning display, from the current window-server layout. Empty when Space queries

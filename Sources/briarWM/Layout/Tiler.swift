@@ -13,10 +13,14 @@ enum Tiler {
     /// own frame-landing notifications converge instead of ping-ponging.
     static let applyTolerance: CGFloat = 2
 
-    static func apply(_ frames: [WinID: CGRect], registry: WindowRegistry) {
+    /// `current` is an optional caller-provided frame snapshot (a reconcile pass reads all
+    /// frames once up front); windows missing from it — or all of them when nil — are read
+    /// live, which the drag snap-back path relies on.
+    static func apply(_ frames: [WinID: CGRect], registry: WindowRegistry,
+                      current currentFrames: [WinID: CGRect]? = nil) {
         for (id, target) in frames {
             guard let window = registry.window(for: id) else { continue }
-            guard let current = window.frame else { window.setFrame(target); continue }
+            guard let current = currentFrames?[id] ?? window.frame else { window.setFrame(target); continue }
             if rectsApproxEqual(current, target) { continue }
             // The full size→position→size dance is only needed when both change (apps clamp
             // position against size and vice versa). A pure move or pure resize is one write.

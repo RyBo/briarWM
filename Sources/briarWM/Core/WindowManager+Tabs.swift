@@ -101,7 +101,8 @@ extension WindowManager {
         }
         var entries: [(id: WinID, tree: BSPTree, frame: CGRect)] = []
         for (tree, id) in visibleTiledWindows() {
-            guard let w = registry.window(for: id), w.pid == pid, let f = w.frame else { continue }
+            guard let w = registry.window(for: id), w.pid == pid,
+                  let f = currentFrame(id) else { continue }
             entries.append((id, tree, f))
         }
         var handled: Set<WinID> = []
@@ -143,7 +144,7 @@ extension WindowManager {
         var leaves: [(id: WinID, frame: CGRect?)] = []
         for (_, id) in visibleTiledWindows() {
             guard let w = registry.window(for: id), w.pid == pid, !w.isMinimized else { continue }
-            leaves.append((id, w.frame ?? desiredFrames[id]))
+            leaves.append((id, currentFrame(id) ?? desiredFrames[id]))
         }
         return nearestStackedLeaf(frame, among: leaves, tolerance: Self.tabStackTolerance)
     }

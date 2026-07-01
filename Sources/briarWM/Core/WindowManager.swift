@@ -37,6 +37,12 @@ final class WindowManager: AXEventSink {
     /// consecutive observations — one transient multi-Space read (mid-animation, Mission
     /// Control) must not permanently pull a tiled window out of its tree.
     var stickyOnce: Set<WinID> = []
+    /// Frames read once at the start of a `reconcileSpaces` pass, so tab dedup, tab
+    /// matching, and frame application don't each re-read the same windows over AX
+    /// (single-threaded, same tick — nothing moves between the snapshot and the writes
+    /// at the end of the pass). nil outside a pass: every other retile path (commands,
+    /// drag snap-back) must read live frames or snap-back breaks.
+    var passFrames: [WinID: CGRect]?
 
     var keymap: Keymap
     var currentMode = Keymap.defaultMode
@@ -244,6 +250,12 @@ final class WindowManager: AXEventSink {
         return out
     }
 
+    /// A window's on-screen frame: the pass snapshot when one is active (and holds the
+    /// window), otherwise a live AX read.
+    func currentFrame(_ id: WinID) -> CGRect? {
+        passFrames?[id] ?? registry.window(for: id)?.frame
+    }
+
     private func displayForWindow(_ window: AXWindow) -> DisplayID {
         if let frame = window.frame, let display = screens.displayForAXRect(frame) { return display }
         return screens.displayIDs.first ?? 0
@@ -279,7 +291,7 @@ final class WindowManager: AXEventSink {
         if let z = zoomedID, tree.contains(z) { frames[z] = area }   // fullscreen override
         for (id, rect) in frames { desiredFrames[id] = rect }
         guard isActive(tree) || force else { return }
-        Tiler.apply(frames, registry: registry)
+        Tiler.apply(frames, registry: registry, current: passFrames)
         if let z = zoomedID, tree.contains(z) { registry.window(for: z)?.raise() }
     }
 
