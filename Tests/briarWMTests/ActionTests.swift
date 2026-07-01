@@ -74,4 +74,23 @@ import Testing
         #expect(Action.parse("garbage zzz") == nil)
         #expect(Action.parse("focus sideways") == nil)
     }
+
+    @Test func workspaceRelativeAndBackAndForth() {
+        #expect(Action.parse("workspace next") == .workspaceNext)
+        #expect(Action.parse("workspace prev") == .workspacePrev)
+        #expect(Action.parse("desktop previous") == .workspacePrev)
+        #expect(Action.parse("workspace back_and_forth") == .workspaceBack)
+        #expect(Action.parse("workspace back") == .workspaceBack)
+        #expect(Action.parse("workspace 3") == .workspace(3))   // numeric form still wins
+    }
+
+    @Test func gapsCommands() {
+        #expect(Action.parse("gaps inner +5") == .gapsAdjust(.inner, 5))
+        #expect(Action.parse("gaps inner -5") == .gapsAdjust(.inner, -5))
+        #expect(Action.parse("gaps outer 2") == .gapsAdjust(.outer, 2))
+        #expect(Action.parse("gaps reset") == .gapsReset)
+        #expect(Action.parse("gaps") == nil)
+        #expect(Action.parse("gaps inner") == nil)
+        #expect(Action.parse("gaps inner much") == nil)
+    }
 }

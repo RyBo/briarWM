@@ -17,13 +17,16 @@ everything is driven by a YAML file and i3-style keybindings.
 - **Per-desktop layouts** — each macOS Space (desktop) keeps its own independent BSP
   layout. Move a window to another desktop and the source re-tiles to fill the gap while
   the destination tiles it to fit. `alt+1…5` switch desktops, `alt+shift+1…5` send the
-  focused window to one.
+  focused window to one; `workspace next/prev/back_and_forth` are bindable too.
 - **Multi-monitor** — one BSP tree per (display, desktop); tiles the active Space per display.
 - **Resize** (direct + a modal resize mode), **balance**, **toggle split orientation**,
-  **fullscreen (zoom)**, **floating** windows + per-app float rules.
+  **fullscreen (zoom)** — fills the tiling area, not macOS-native fullscreen —
+  **floating** windows + per-app float rules (by bundle id and/or title regex), and
+  runtime gaps tweaks (`gaps inner +5` / `gaps reset`).
 - **Minimize reflows** — minimizing a window fills its space with the rest and restores it
   on un-minimize (toggle `reflow_on_minimize`, default on).
-- **YAML config with hot reload** — edit and save; changes apply instantly.
+- **YAML config with hot reload** — edit and save; a valid config applies instantly,
+  a broken one keeps your current settings and flags the error in the menu bar (🌿⚠︎).
 - Menu-bar status item; runs as a background accessory (no Dock icon).
 
 ## Requirements
@@ -87,6 +90,11 @@ Change `modifier:` in the config if Alt's dead-key behavior gets in your way.
 
 See [`config.example.yaml`](config.example.yaml). Lives at `~/.config/briarWM/config.yaml`,
 hot-reloads on save. Every field is optional and falls back to a default.
+
+`make check` validates more than YAML syntax: unknown modifier names, bad
+`insert_at`/`auto_split`/`preset_cycle` values, bindings whose key or action doesn't
+parse (listed by name), `mode` actions referencing undefined modes, and regexes that
+don't compile all fail the check with a non-zero exit.
 
 ## Logs
 

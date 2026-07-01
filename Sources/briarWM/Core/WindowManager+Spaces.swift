@@ -110,7 +110,9 @@ extension WindowManager {
     func refreshActiveSpaces() {
         if spaces.isAvailable {
             for ds in spaces.displayLayout() where ds.currentIsUserSpace {
-                if let d = ds.displayID { activeSpace[d] = ds.currentSpace }
+                guard let d = ds.displayID else { continue }
+                if let old = activeSpace[d], old != ds.currentSpace { lastSpace[d] = old }
+                activeSpace[d] = ds.currentSpace
             }
         }
         for d in screens.displayIDs where activeSpace[d] == nil { activeSpace[d] = pseudoSpace(d) }

@@ -16,13 +16,23 @@ enum Action: Equatable {
     case focusModeToggle
     case close
     case workspace(Int)        // switch to desktop N (1-based, per the focused display)
+    case workspaceNext         // switch to the next user desktop (wraps)
+    case workspacePrev         // switch to the previous user desktop (wraps)
+    case workspaceBack         // i3 back_and_forth: the previously-visible desktop
     case moveToWorkspace(Int)  // send the focused window to desktop N (1-based)
+    case gapsAdjust(GapsSide, CGFloat)  // runtime gaps tweak, e.g. "gaps inner +5"
+    case gapsReset             // restore the config file's gaps
     case exec(String)        // an `exec` key (e.g. "terminal") or a raw command
     case reload
     case restart
     case enterMode(String)
     case exitMode
     case dumpTree
+}
+
+/// Which gap a runtime `gaps` command adjusts.
+enum GapsSide: Equatable {
+    case inner, outer
 }
 
 extension Action {
@@ -50,8 +60,14 @@ extension Action {
             return nil
 
         case "workspace", "desktop":
-            guard let n = lc.compactMap({ Int($0) }).first else { return nil }
-            return .workspace(n)
+            switch lc.first {
+            case "next": return .workspaceNext
+            case "prev", "previous": return .workspacePrev
+            case "back_and_forth", "back": return .workspaceBack
+            default:
+                guard let n = lc.compactMap({ Int($0) }).first else { return nil }
+                return .workspace(n)
+            }
 
         case "resize":
             guard let d = lc.first.flatMap(Direction.init(token:)) else { return nil }
@@ -77,6 +93,15 @@ extension Action {
             if lc.first == "cycle" || lc.first == "next" { return .cycleLayout }
             if let p = lc.first.flatMap(LayoutPreset.init(token:)) { return .setLayout(p) }
             return nil
+
+        case "gaps":
+            switch lc.first {
+            case "reset": return .gapsReset
+            case "inner", "outer":
+                guard lc.count > 1, let delta = Double(lc[1]) else { return nil }
+                return .gapsAdjust(lc.first == "inner" ? .inner : .outer, CGFloat(delta))
+            default: return nil
+            }
 
         case "balance": return .balance
         case "fullscreen", "zoom": return .fullscreen

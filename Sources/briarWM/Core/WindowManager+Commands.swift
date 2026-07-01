@@ -148,6 +148,30 @@ extension WindowManager {
         spaces.setCurrentSpace(target, onDisplayUUID: ds.displayUUID)
     }
 
+    /// Switch to the next (`step` = 1) or previous (`step` = -1) user desktop of the
+    /// focused display, wrapping at the ends.
+    func switchToDesktopRelative(_ step: Int) {
+        guard spaces.isAvailable else { return }
+        let display = focusedID.flatMap { treeContaining($0)?.display } ?? screens.displayIDs.first ?? 0
+        guard let ds = spaces.displayLayout().first(where: { $0.displayID == display }) else { return }
+        let user = ds.spaces.filter { $0.isUser }
+        guard user.count > 1, let cur = user.firstIndex(where: { $0.id == ds.currentSpace }) else { return }
+        let count = user.count
+        let target = user[((cur + step) % count + count) % count]
+        spaces.setCurrentSpace(target.id, onDisplayUUID: ds.displayUUID)
+    }
+
+    /// i3's `workspace back_and_forth`: return to the desktop that was visible before
+    /// the last switch on the focused display.
+    func switchToDesktopBack() {
+        guard spaces.isAvailable else { return }
+        let display = focusedID.flatMap { treeContaining($0)?.display } ?? screens.displayIDs.first ?? 0
+        guard let last = lastSpace[display],
+              let ds = spaces.displayLayout().first(where: { $0.displayID == display }),
+              ds.spaces.contains(where: { $0.id == last && $0.isUser }) else { return }
+        spaces.setCurrentSpace(last, onDisplayUUID: ds.displayUUID)
+    }
+
     /// Send the focused window to the `index`-th user desktop (1-based) on its display.
     /// Closes the gap on the source; pre-sizes the destination. Follows only if configured.
     func moveFocusedToDesktop(_ index: Int) {
@@ -167,6 +191,26 @@ extension WindowManager {
         retile(srcTree)                                   // active source → gap closes
         retile(dst, force: true)                          // size it even though off-screen
         if config.layout.moveFollowsFocus { switchToDesktop(index) }
+    }
+
+    // MARK: - Gaps
+
+    /// Runtime gaps tweak (`gaps inner +5` / `gaps outer -5`): applies immediately and
+    /// lasts until `gaps reset` or a config reload — the file is never written.
+    func adjustGaps(_ side: GapsSide, by delta: CGFloat) {
+        var g = config.gaps
+        switch side {
+        case .inner: g.inner = max(0, g.inner + delta)
+        case .outer: g.outer = max(0, g.outer + delta)
+        }
+        replaceGaps(g)
+        retileAll()
+    }
+
+    /// Restore the config file's gaps (`gaps reset`).
+    func resetGaps() {
+        replaceGaps(baseGaps)
+        retileAll()
     }
 
     // MARK: - Process / config

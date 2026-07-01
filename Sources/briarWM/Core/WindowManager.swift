@@ -12,6 +12,9 @@ import ApplicationServices
 final class WindowManager: AXEventSink {
     /// Mutated only by `reload()` (in +Commands); everything else reads.
     private(set) var config: Config
+    /// The gaps as loaded from the config file — what `gaps reset` restores after
+    /// runtime `gaps inner/outer ±N` tweaks.
+    private(set) var baseGaps: Gaps
     let screens = ScreenManager()
     let registry = WindowRegistry()
     let hotkeys = HotkeyManager()
@@ -32,6 +35,10 @@ final class WindowManager: AXEventSink {
     /// The currently-visible Space on each display. Only trees whose Space is active
     /// have their frames applied to real windows.
     var activeSpace: [DisplayID: SpaceID] = [:]
+    /// The previously-visible user desktop per display — the `workspace back_and_forth`
+    /// target. Recorded by `refreshActiveSpaces` whenever the active Space changes,
+    /// so switches made outside briarWM (Ctrl+arrows, Mission Control) count too.
+    var lastSpace: [DisplayID: SpaceID] = [:]
     var desiredFrames: [WinID: CGRect] = [:]
     /// Windows seen on multiple Spaces once. Floating a window as "sticky" needs two
     /// consecutive observations — one transient multi-Space read (mid-animation, Mission
@@ -66,12 +73,20 @@ final class WindowManager: AXEventSink {
 
     init(config: Config) {
         self.config = config
+        self.baseGaps = config.gaps
         self.keymap = Keymap(config: config)
     }
 
-    /// The only mutation point for `config` — used by `reload()` in +Commands
+    /// The only full-config mutation point — used by `reload()` in +Commands
     /// (`private(set)` can't span extension files).
-    func replaceConfig(_ newConfig: Config) { config = newConfig }
+    func replaceConfig(_ newConfig: Config) {
+        config = newConfig
+        baseGaps = newConfig.gaps
+    }
+
+    /// Runtime gaps tweak (`gaps inner +5`): mutates the live config only; `baseGaps`
+    /// keeps the file's values for `gaps reset`.
+    func replaceGaps(_ gaps: Gaps) { config.gaps = gaps }
 
     // MARK: - Lifecycle
 

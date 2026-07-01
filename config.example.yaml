@@ -16,6 +16,7 @@ layout:
   focus_wraps_monitors: true
   move_follows_focus: false   # `move workspace N`: follow the window to that desktop?
   space_poll_interval: 1.5    # seconds; backstop sweep for drag-to-desktop. 0 disables.
+                              # (takes effect on restart, not hot reload)
   manage_tabbed_windows: true # treat native macOS tabs (e.g. Ghostty) as one tile that
                               # follows the visible tab; false = one tile per tab window
   reflow_on_minimize: true    # minimizing a window reflows the rest to fill the space
@@ -86,6 +87,15 @@ keybindings:
   "alt+shift+3": "move workspace 3"
   "alt+shift+4": "move workspace 4"
   "alt+shift+5": "move workspace 5"
+  # relative switching, and i3's back_and_forth (bounce to the previous desktop):
+  # "alt+rightbracket": "workspace next"
+  # "alt+leftbracket": "workspace prev"
+  # "alt+tab": "workspace back_and_forth"
+
+  # runtime gaps tweaks (live until `gaps reset` or a config reload):
+  # "alt+equal": "gaps inner +2"
+  # "alt+minus": "gaps inner -2"
+  # "alt+shift+g": "gaps reset"
 
   # launching
   "alt+return": "exec terminal"
