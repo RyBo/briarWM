@@ -28,4 +28,14 @@ import Carbon.HIToolbox
         #expect(KeyCombo.parse("alt+nonsense", defaultMod: "alt") == nil)
         #expect(KeyCombo.parse("", defaultMod: "alt") == nil)
     }
+
+    @Test func twoKeyTokensAreRejected() {
+        // Not "last key wins" — a malformed combo must fail so the validator reports it.
+        #expect(KeyCombo.parse("alt+h+l", defaultMod: "alt") == nil)
+    }
+
+    @Test func modifierOnlyComboIsRejected() {
+        #expect(KeyCombo.parse("alt+shift", defaultMod: "alt") == nil)
+        #expect(KeyCombo.parse("shift", defaultMod: "alt") == nil)
+    }
 }

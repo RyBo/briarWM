@@ -84,7 +84,9 @@ enum Keycodes {
 
 extension KeyCombo {
     /// Parse a binding string like `"alt+shift+h"`. `$mod`/`mod` resolves to `defaultMod`.
-    /// Returns nil if there is no valid key token.
+    /// Returns nil if there is no valid key token, or more than one — a malformed combo
+    /// like `"alt+h+l"` must fail loudly (via the validator) rather than silently bind
+    /// only its last key.
     static func parse(_ string: String, defaultMod: String) -> KeyCombo? {
         let tokens = string.split(separator: "+").map {
             $0.trimmingCharacters(in: .whitespaces)
@@ -97,7 +99,8 @@ extension KeyCombo {
             if let mask = Keycodes.modifierMask(for: token, defaultMod: defaultMod) {
                 modifiers |= mask
             } else {
-                keyName = token // last non-modifier token wins
+                guard keyName == nil else { return nil }
+                keyName = token
             }
         }
         guard let name = keyName, let code = Keycodes.keyCode(for: name) else { return nil }
