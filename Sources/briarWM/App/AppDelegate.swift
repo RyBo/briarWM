@@ -31,7 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startManager() {
-        let config = ConfigLoader.load()
+        // At startup there is no last-good config to keep, so fall back to defaults —
+        // but surface the parse error in the status item instead of failing silently.
+        var configError: String?
+        let config: Config
+        do {
+            config = try ConfigLoader.load()
+        } catch {
+            Log.logger.error("config parse error: \(error) — starting with defaults")
+            configError = "\(error)"
+            config = Config()
+        }
         let manager = WindowManager(config: config)
         self.manager = manager
 
@@ -41,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         manager.start()
         statusItem = StatusItemController(manager: manager)
+        if let configError { statusItem?.showConfigError(configError) }
 
         configWatcher = ConfigWatcher(url: ConfigLoader.configURL) { [weak manager] in
             manager?.reload()

@@ -70,6 +70,9 @@ final class WindowManager: AXEventSink {
 
     /// Notified when the active mode changes (for the status item). nil = default mode.
     var onModeChanged: ((String?) -> Void)?
+    /// Notified when a config reload fails (the error message) or succeeds again (nil),
+    /// so the status item can show/clear a persistent error indicator.
+    var onConfigError: ((String?) -> Void)?
 
     init(config: Config) {
         self.config = config
@@ -747,11 +750,19 @@ final class WindowManager: AXEventSink {
     }
 
     func reload() {
-        config = ConfigLoader.load()
+        do {
+            config = try ConfigLoader.load()
+        } catch {
+            // Keep the working config — a typo mid-edit must not wipe the live keybindings.
+            Log.logger.error("config reload failed: \(error) — keeping the current config")
+            onConfigError?("\(error)")
+            return
+        }
         keymap = Keymap(config: config)
         currentMode = Keymap.defaultMode
         applyKeymap()
         retileAll()
+        onConfigError?(nil)
         Log.logger.info("config reloaded")
     }
 
