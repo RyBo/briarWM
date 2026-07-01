@@ -24,6 +24,13 @@ if CommandLine.arguments.contains("--check-config") {
     }()
     do {
         let cfg = try ConfigLoader.load(from: url)
+        let issues = ConfigValidator.issues(in: cfg)
+        guard issues.isEmpty else {
+            var msg = "❌ \(url.lastPathComponent): \(issues.count) issue(s)\n"
+            for issue in issues { msg += "   • \(issue)\n" }
+            FileHandle.standardError.write(Data(msg.utf8))
+            exit(1)
+        }
         let keymap = Keymap(config: cfg)
         print("✅ \(url.lastPathComponent) OK")
         print("   modifier: \(cfg.modifier)  gaps: inner=\(cfg.gaps.inner) outer=\(cfg.gaps.outer)")

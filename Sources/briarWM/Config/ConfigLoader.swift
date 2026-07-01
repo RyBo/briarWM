@@ -17,7 +17,12 @@ enum ConfigLoader {
             Log.logger.info("no config at \(url.path); using defaults")
             return Config()
         }
-        return try load(from: url)
+        let config = try load(from: url)
+        // Values that decode fine but would be silently ignored at runtime — warn once here.
+        for issue in ConfigValidator.issues(in: config) {
+            Log.logger.warning("config: \(issue)")
+        }
+        return config
     }
 
     /// Decode a specific config file, throwing on read/parse failure.

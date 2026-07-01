@@ -23,6 +23,13 @@ enum Keycodes {
         }
     }
 
+    /// The names `modifierMask(forName:)` maps deliberately — anything else silently
+    /// falls back to alt, so config validation flags unknown names against this set.
+    static let knownModifierNames: Set<String> = [
+        "alt", "option", "opt", "cmd", "command", "super",
+        "ctrl", "control", "shift", "hyper",
+    ]
+
     /// Carbon mask for the configured default modifier name (falls back to Alt).
     static func modifierMask(forName name: String) -> UInt32 {
         switch name.lowercased() {
