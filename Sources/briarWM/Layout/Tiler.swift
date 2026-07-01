@@ -16,8 +16,21 @@ enum Tiler {
     static func apply(_ frames: [WinID: CGRect], registry: WindowRegistry) {
         for (id, target) in frames {
             guard let window = registry.window(for: id) else { continue }
-            if let current = window.frame, rectsApproxEqual(current, target) { continue }
-            window.setFrame(target)
+            guard let current = window.frame else { window.setFrame(target); continue }
+            if rectsApproxEqual(current, target) { continue }
+            // The full size→position→size dance is only needed when both change (apps clamp
+            // position against size and vice versa). A pure move or pure resize is one write.
+            let sameSize = abs(current.width - target.width) <= applyTolerance &&
+                           abs(current.height - target.height) <= applyTolerance
+            let sameOrigin = abs(current.minX - target.minX) <= applyTolerance &&
+                             abs(current.minY - target.minY) <= applyTolerance
+            if sameSize {
+                window.setPosition(target.origin)
+            } else if sameOrigin {
+                window.setSize(target.size)
+            } else {
+                window.setFrame(target)
+            }
         }
     }
 }
