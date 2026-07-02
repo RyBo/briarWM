@@ -7,44 +7,6 @@ import Foundation
 /// Manager Swift overlay — the symbol is resolved by `dlsym` like every other private one.
 private struct CarbonPSN { var hi: UInt32 = 0; var lo: UInt32 = 0 }
 
-/// One managed Space (desktop) as reported by the window server.
-///
-/// `type` is the raw CGS space type: `0` = user (a normal, tileable desktop),
-/// `4` = native fullscreen, `2` = system. Only `type == 0` Spaces are tiled and
-/// addressable by the `workspace N` / `move workspace N` commands.
-struct SpaceInfo: Equatable {
-    let id: SpaceID
-    let type: Int
-    var isUser: Bool { type == 0 }
-}
-
-/// The Space layout of a single display: its ordered list of Spaces (left → right)
-/// and which one is currently visible.
-struct DisplaySpaces: Equatable {
-    let displayUUID: String      // window-server display key; needed to switch Spaces
-    let displayID: DisplayID?    // resolved CGDirectDisplayID, or nil if unmatched
-    let currentSpace: SpaceID
-    let spaces: [SpaceInfo]
-
-    /// True when the currently-visible Space is a normal user desktop. While the screen
-    /// is locked (or showing the login window), the window server reports a system Space
-    /// as current — which is *not* one of our trees. Callers use this to avoid recording
-    /// that transient Space as "active" and stranding tiling until something re-queries.
-    /// Pure — unit-testable. False if the current Space isn't found in `spaces`.
-    var currentIsUserSpace: Bool {
-        spaces.first { $0.id == currentSpace }?.isUser ?? false
-    }
-}
-
-/// 1-based index into the *user* Spaces of `spaces` (skipping fullscreen/system).
-/// Pure — no window-server calls — so it is unit-testable. Returns nil when the
-/// index is out of range. `workspace 1` maps to the leftmost user desktop.
-func userSpaceID(at index: Int, in spaces: [SpaceInfo]) -> SpaceID? {
-    let user = spaces.filter { $0.isUser }
-    guard index >= 1, index <= user.count else { return nil }
-    return user[index - 1].id
-}
-
 /// The single place briarWM touches private CoreGraphics / SkyLight symbols.
 ///
 /// macOS exposes no *public* API for which Space a window is on, for enumerating
@@ -159,8 +121,8 @@ final class SpacesManager {
                 let type = (sd["type"] as? NSNumber)?.intValue ?? 0
                 return SpaceInfo(id: id, type: type)
             }
-            guard !spaces.isEmpty else { return nil }
-            let current = (dict["Current Space"] as? [String: Any]).flatMap(spaceID(from:)) ?? spaces.first!.id
+            guard let firstSpace = spaces.first else { return nil }
+            let current = (dict["Current Space"] as? [String: Any]).flatMap(spaceID(from:)) ?? firstSpace.id
             // "Main" is the sentinel when "Displays have separate Spaces" is OFF.
             let displayID = uuid == "Main" ? DisplayID(CGMainDisplayID()) : uuidToID[uuid.uppercased()]
             return DisplaySpaces(displayUUID: uuid, displayID: displayID, currentSpace: current, spaces: spaces)

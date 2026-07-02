@@ -17,7 +17,7 @@ final class HotkeyManager {
         self.handler = handler
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
+        let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
             guard let userData, let event else { return noErr }
             var hkID = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
@@ -25,6 +25,9 @@ final class HotkeyManager {
             Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue().dispatch(hkID.id)
             return noErr
         }, 1, &spec, selfPtr, &eventHandler)
+        if status != noErr {
+            Log.logger.error("InstallEventHandler failed (status \(status)) — no hotkey will fire")
+        }
     }
 
     /// Replace all currently registered hotkeys with `combos`.

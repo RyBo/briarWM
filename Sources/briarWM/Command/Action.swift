@@ -71,8 +71,11 @@ extension Action {
 
         case "resize":
             guard let d = lc.first.flatMap(Direction.init(token:)) else { return nil }
-            let amount = lc.count > 1 ? CGFloat(Double(lc[1]) ?? Double(defaultResizeStep)) : defaultResizeStep
-            return .resize(d, amount)
+            guard lc.count > 1 else { return .resize(d, defaultResizeStep) }
+            // An amount is present but doesn't parse — fail so the validator flags it,
+            // rather than silently snapping back to the default step.
+            guard let amount = Double(lc[1]) else { return nil }
+            return .resize(d, CGFloat(amount))
 
         case "preselect", "split":
             if lc.first == "toggle" { return .toggleSplit }

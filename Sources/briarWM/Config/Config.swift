@@ -29,15 +29,19 @@ struct Config: Decodable, Equatable {
     }
 
     init(from decoder: Decoder) throws {
+        // Single-source the defaults: `d` holds the memberwise-init defaults, so every
+        // missing key falls back to `d.field` rather than a duplicated literal. (Same
+        // pattern in Gaps / LayoutOptions / FloatingRules below.)
+        let d = Self()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        modifier = try c.decodeIfPresent(String.self, forKey: .modifier) ?? "alt"
-        gaps = try c.decodeIfPresent(Gaps.self, forKey: .gaps) ?? Gaps()
-        layout = try c.decodeIfPresent(LayoutOptions.self, forKey: .layout) ?? LayoutOptions()
-        exec = try c.decodeIfPresent([String: String].self, forKey: .exec) ?? [:]
-        keybindings = try c.decodeIfPresent([String: String].self, forKey: .keybindings) ?? [:]
-        modes = try c.decodeIfPresent([String: [String: String]].self, forKey: .modes) ?? [:]
-        floating = try c.decodeIfPresent(FloatingRules.self, forKey: .floating) ?? FloatingRules()
-        rules = try c.decodeIfPresent([AppRule].self, forKey: .rules) ?? []
+        modifier = try c.decodeIfPresent(String.self, forKey: .modifier) ?? d.modifier
+        gaps = try c.decodeIfPresent(Gaps.self, forKey: .gaps) ?? d.gaps
+        layout = try c.decodeIfPresent(LayoutOptions.self, forKey: .layout) ?? d.layout
+        exec = try c.decodeIfPresent([String: String].self, forKey: .exec) ?? d.exec
+        keybindings = try c.decodeIfPresent([String: String].self, forKey: .keybindings) ?? d.keybindings
+        modes = try c.decodeIfPresent([String: [String: String]].self, forKey: .modes) ?? d.modes
+        floating = try c.decodeIfPresent(FloatingRules.self, forKey: .floating) ?? d.floating
+        rules = try c.decodeIfPresent([AppRule].self, forKey: .rules) ?? d.rules
     }
 }
 
@@ -52,9 +56,10 @@ struct Gaps: Decodable, Equatable {
     enum CodingKeys: String, CodingKey { case inner, outer }
 
     init(from decoder: Decoder) throws {
+        let d = Self()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        inner = try c.decodeIfPresent(CGFloat.self, forKey: .inner) ?? 10
-        outer = try c.decodeIfPresent(CGFloat.self, forKey: .outer) ?? 6
+        inner = try c.decodeIfPresent(CGFloat.self, forKey: .inner) ?? d.inner
+        outer = try c.decodeIfPresent(CGFloat.self, forKey: .outer) ?? d.outer
     }
 }
 
@@ -126,17 +131,18 @@ struct LayoutOptions: Decodable, Equatable {
     }
 
     init(from decoder: Decoder) throws {
+        let d = Self()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        defaultRatio = try c.decodeIfPresent(Double.self, forKey: .defaultRatio) ?? 0.5
-        insertAt = try c.decodeIfPresent(String.self, forKey: .insertAt) ?? "after"
-        autoSplit = try c.decodeIfPresent(String.self, forKey: .autoSplit) ?? "longer_edge"
-        focusWrapsMonitors = try c.decodeIfPresent(Bool.self, forKey: .focusWrapsMonitors) ?? true
-        moveFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .moveFollowsFocus) ?? false
-        spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? 1.5
-        presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? LayoutOptions.defaultPresetCycle
-        mainRatio = try c.decodeIfPresent(Double.self, forKey: .mainRatio) ?? 0.6
-        manageTabbedWindows = try c.decodeIfPresent(Bool.self, forKey: .manageTabbedWindows) ?? true
-        reflowOnMinimize = try c.decodeIfPresent(Bool.self, forKey: .reflowOnMinimize) ?? true
+        defaultRatio = try c.decodeIfPresent(Double.self, forKey: .defaultRatio) ?? d.defaultRatio
+        insertAt = try c.decodeIfPresent(String.self, forKey: .insertAt) ?? d.insertAt
+        autoSplit = try c.decodeIfPresent(String.self, forKey: .autoSplit) ?? d.autoSplit
+        focusWrapsMonitors = try c.decodeIfPresent(Bool.self, forKey: .focusWrapsMonitors) ?? d.focusWrapsMonitors
+        moveFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .moveFollowsFocus) ?? d.moveFollowsFocus
+        spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? d.spacePollInterval
+        presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? d.presetCycle
+        mainRatio = try c.decodeIfPresent(Double.self, forKey: .mainRatio) ?? d.mainRatio
+        manageTabbedWindows = try c.decodeIfPresent(Bool.self, forKey: .manageTabbedWindows) ?? d.manageTabbedWindows
+        reflowOnMinimize = try c.decodeIfPresent(Bool.self, forKey: .reflowOnMinimize) ?? d.reflowOnMinimize
     }
 }
 
@@ -154,9 +160,10 @@ struct FloatingRules: Decodable, Equatable {
     }
 
     init(from decoder: Decoder) throws {
+        let d = Self()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        bundleIds = try c.decodeIfPresent([String].self, forKey: .bundleIds) ?? []
-        titleRegex = try c.decodeIfPresent([String].self, forKey: .titleRegex) ?? []
+        bundleIds = try c.decodeIfPresent([String].self, forKey: .bundleIds) ?? d.bundleIds
+        titleRegex = try c.decodeIfPresent([String].self, forKey: .titleRegex) ?? d.titleRegex
     }
 }
 

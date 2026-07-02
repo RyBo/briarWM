@@ -17,11 +17,19 @@ import Testing
     }
 
     @Test func knownModifierAliasesAreClean() {
-        for name in ["alt", "Option", "cmd", "SUPER", "ctrl", "shift", "hyper"] {
+        for name in ["alt", "Option", "cmd", "SUPER", "win", "meta", "ctrl", "shift", "hyper"] {
             var c = Config()
             c.modifier = name
             #expect(ConfigValidator.issues(in: c).isEmpty, "\(name) should be accepted")
         }
+    }
+
+    @Test func negativeSpacePollIntervalIsFlagged() {
+        var c = Config()
+        c.layout.spacePollInterval = -1
+        let issues = ConfigValidator.issues(in: c)
+        #expect(issues.count == 1)
+        #expect(issues[0].contains("space_poll_interval"))
     }
 
     @Test func badInsertAtAndAutoSplitAreFlagged() {

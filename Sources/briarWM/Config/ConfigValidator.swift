@@ -24,6 +24,9 @@ enum ConfigValidator {
                               ("layout.main_ratio", config.layout.mainRatio)] where !(ratio > 0 && ratio < 1) {
             out.append("\(name): \(ratio) is outside (0, 1)")
         }
+        if config.layout.spacePollInterval < 0 {
+            out.append("layout.space_poll_interval: negative disables the backstop poll — use 0 to disable explicitly")
+        }
 
         out += bindingIssues(config.keybindings, context: "keybindings", config: config)
         for (name, binds) in config.modes.sorted(by: { $0.key < $1.key }) {
