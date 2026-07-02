@@ -5,16 +5,6 @@ import ApplicationServices
 /// and parking/restoring trees across monitor sleep/unplug.
 extension WindowManager {
 
-    /// Re-home every managed window whose real Space no longer matches the tree it's in,
-    /// then re-tile the visible desktops. Active trees apply frames — closing the gap on
-    /// the source desktop and sizing windows on the destination; hidden trees only
-    /// recompute. No-op without Space support. Cheap enough for the backstop timer.
-    ///
-    /// `moveFocus` is true only for a genuine user-facing Space switch (the
-    /// `activeSpaceDidChange` notification) — then focus is asserted onto the now-visible
-    /// desktop. Every other caller (the backstop poll, app activation, display reconfig,
-    /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
-    /// steals OS keyboard focus out from under the user.
     /// The timer-driven backstop reconcile. When the window server's structural state is
     /// unchanged since the last tick — nothing appeared, closed, minimized, moved, or
     /// switched desktops — skip the whole sweep, so an idle system costs one CG call per
@@ -31,6 +21,16 @@ extension WindowManager {
         reconcileSpaces()
     }
 
+    /// Re-home every managed window whose real Space no longer matches the tree it's in,
+    /// then re-tile the visible desktops. Active trees apply frames — closing the gap on
+    /// the source desktop and sizing windows on the destination; hidden trees only
+    /// recompute. No-op without Space support. Cheap enough for the backstop timer.
+    ///
+    /// `moveFocus` is true only for a genuine user-facing Space switch (the
+    /// `activeSpaceDidChange` notification) — then focus is asserted onto the now-visible
+    /// desktop. Every other caller (the backstop poll, app activation, display reconfig,
+    /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
+    /// steals OS keyboard focus out from under the user.
     func reconcileSpaces(moveFocus: Bool = false) {
         refreshActiveSpaces()                          // (1) keep activeSpace fresh
         passFrames = snapshotVisibleFrames()           // one AX read per window for the whole pass
@@ -61,13 +61,26 @@ extension WindowManager {
         // keyed by display), `retile` (the screen is keyed by display), and new-window
         // placement. Re-pointing here makes the backstop poll self-heal what used to require
         // a briarWM restart.
+        repointTreesToOwningDisplay(spaceDisplay, dirty: &dirty)
+        rehomeDriftedWindows(spaceDisplay, dirty: &dirty)
+
+        retileDirtyAndVisible(dirty)
+        repairFocusCache(moveFocus: moveFocus)
+    }
+
+    /// Re-point each tree at the display that currently owns its Space, marking any that moved dirty.
+    private func repointTreesToOwningDisplay(_ spaceDisplay: [SpaceID: DisplayID], dirty: inout Set<SpaceID>) {
         for tree in trees.values {
             guard let d = spaceDisplay[tree.space], d != tree.display else { continue }
             Log.logger.debug("re-point tree space \(tree.space): display \(tree.display) → \(d)")
             tree.display = d
             dirty.insert(tree.space)
         }
+    }
 
+    /// Re-home each tiled window whose real Space drifted from its tree (float one seen spanning
+    /// every desktop twice running), marking both source and destination Spaces dirty.
+    private func rehomeDriftedWindows(_ spaceDisplay: [SpaceID: DisplayID], dirty: inout Set<SpaceID>) {
         for tree in Array(trees.values) {                 // snapshot: we mutate `trees`
             for id in tree.windowIDs where !registry.isFloating(id) {
                 guard let element = registry.window(for: id)?.element,
@@ -75,10 +88,8 @@ extension WindowManager {
                 let ids = spaces.spaceIDs(for: wid)
                 if ids.count > 1 {                        // sticky twice in a row → float it
                     guard stickyOnce.contains(id) else { stickyOnce.insert(id); continue }
-                    stickyOnce.remove(id)
-                    tree.remove(id)
+                    detach(id, from: tree)
                     registry.setFloating(id, true)
-                    if focusedID == id { focusedID = tree.focused }
                     dirty.insert(tree.space)
                     continue
                 }
@@ -88,18 +99,14 @@ extension WindowManager {
                 // window→Space numbering disagrees with the managed-space dict key — see
                 // SpacesManager.spaceID(from:) and switch the preferred key.
                 Log.logger.debug("reconcile: \(id) moved space \(tree.space) → \(real)")
-                tree.remove(id)
                 let dst = ensureTree(space: real, display: spaceDisplay[real] ?? tree.display)
-                dst.insert(id, focusedFrame: dst.focused.flatMap { desiredFrames[$0] },
+                detach(id, from: tree)
+                dst.insert(id, focusedFrame: insertionHint(for: dst),
                            autoSplit: autoSplit, ratio: config.layout.defaultRatio)
-                if focusedID == id { focusedID = tree.focused }
                 dirty.insert(tree.space)
                 dirty.insert(real)
             }
         }
-
-        retileDirtyAndVisible(dirty)
-        repairFocusCache(moveFocus: moveFocus)
     }
 
     /// Refresh the visible Space per display from the window server (or pseudo-Spaces).
@@ -137,6 +144,12 @@ extension WindowManager {
             if let f = registry.window(for: id)?.frame { out[id] = f }
         }
         return out
+    }
+
+    /// The current window-server layout entry for `display`, or nil when Space queries are
+    /// unavailable or the display isn't in the layout.
+    func displayLayoutEntry(for display: DisplayID) -> DisplaySpaces? {
+        spaces.displayLayout().first { $0.displayID == display }
     }
 
     /// space → owning display, from the current window-server layout. Empty when Space queries

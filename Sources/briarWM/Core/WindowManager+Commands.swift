@@ -110,7 +110,7 @@ extension WindowManager {
             let space = registry.window(for: fid).map { resolveSpace($0, display: display).space }
                 ?? activeSpace[display] ?? pseudoSpace(display)
             let tree = ensureTree(space: space, display: display)
-            tree.insert(fid, focusedFrame: tree.focused.flatMap { desiredFrames[$0] },
+            tree.insert(fid, focusedFrame: insertionHint(for: tree),
                         autoSplit: autoSplit, ratio: config.layout.defaultRatio)
             retile(tree)
         } else if let tree = treeContaining(fid) {
@@ -142,8 +142,8 @@ extension WindowManager {
     /// resulting `activeSpaceDidChange` notification drives reconcile + refocus.
     func switchToDesktop(_ index: Int) {
         guard spaces.isAvailable else { return }
-        let display = focusedID.flatMap { treeContaining($0)?.display } ?? screens.displayIDs.first ?? 0
-        guard let ds = spaces.displayLayout().first(where: { $0.displayID == display }),
+        let display = focusedDisplay()
+        guard let ds = displayLayoutEntry(for: display),
               let target = userSpaceID(at: index, in: ds.spaces) else { return }
         spaces.setCurrentSpace(target, onDisplayUUID: ds.displayUUID)
     }
@@ -152,8 +152,8 @@ extension WindowManager {
     /// focused display, wrapping at the ends.
     func switchToDesktopRelative(_ step: Int) {
         guard spaces.isAvailable else { return }
-        let display = focusedID.flatMap { treeContaining($0)?.display } ?? screens.displayIDs.first ?? 0
-        guard let ds = spaces.displayLayout().first(where: { $0.displayID == display }) else { return }
+        let display = focusedDisplay()
+        guard let ds = displayLayoutEntry(for: display) else { return }
         let user = ds.spaces.filter { $0.isUser }
         guard user.count > 1, let cur = user.firstIndex(where: { $0.id == ds.currentSpace }) else { return }
         let count = user.count
@@ -165,9 +165,9 @@ extension WindowManager {
     /// the last switch on the focused display.
     func switchToDesktopBack() {
         guard spaces.isAvailable else { return }
-        let display = focusedID.flatMap { treeContaining($0)?.display } ?? screens.displayIDs.first ?? 0
+        let display = focusedDisplay()
         guard let last = lastSpace[display],
-              let ds = spaces.displayLayout().first(where: { $0.displayID == display }),
+              let ds = displayLayoutEntry(for: display),
               ds.spaces.contains(where: { $0.id == last && $0.isUser }) else { return }
         spaces.setCurrentSpace(last, onDisplayUUID: ds.displayUUID)
     }
@@ -179,14 +179,14 @@ extension WindowManager {
               let element = registry.window(for: fid)?.element,
               let wid = spaces.cgWindowID(for: element) else { return }
         let display = srcTree.display
-        guard let ds = spaces.displayLayout().first(where: { $0.displayID == display }),
+        guard let ds = displayLayoutEntry(for: display),
               let target = userSpaceID(at: index, in: ds.spaces), target != srcTree.space else { return }
 
         spaces.moveWindow(wid, toSpace: target)           // window-server move (no AX frame change)
         srcTree.remove(fid)
         if focusedID == fid { focusedID = srcTree.focused }
         let dst = ensureTree(space: target, display: display)
-        dst.insert(fid, focusedFrame: dst.focused.flatMap { desiredFrames[$0] },
+        dst.insert(fid, focusedFrame: insertionHint(for: dst),
                    autoSplit: autoSplit, ratio: config.layout.defaultRatio)
         retile(srcTree)                                   // active source → gap closes
         retile(dst, force: true)                          // size it even though off-screen
