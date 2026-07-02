@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// AX clients created before the grant stay broken, so relaunch once granted.
     private func waitForPermission() {
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
             guard PermissionGate.isTrusted(prompt: false) else { return }
             timer.invalidate()
             Log.logger.info("Accessibility granted — relaunching")
