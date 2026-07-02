@@ -226,7 +226,8 @@ extension WindowManager {
         tree.display = display
         if let existing = trees[tree.space], existing !== tree {
             for id in tree.windowIDs {
-                existing.insert(id, focusedFrame: nil, ratio: config.layout.defaultRatio)
+                existing.insert(id, focusedFrame: nil, autoSplit: autoSplit,
+                                ratio: config.layout.defaultRatio)
             }
         } else {
             trees[tree.space] = tree
