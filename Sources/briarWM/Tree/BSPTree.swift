@@ -4,6 +4,26 @@ enum InsertAt: String {
     case after, before
 }
 
+/// How the auto-split orientation is picked for a new insert (config `auto_split`),
+/// when no bspwm-style preselection is set.
+enum AutoSplit {
+    /// Split along the focused window's longer edge (bspwm default).
+    case longerEdge
+    /// Always split horizontally (side-by-side).
+    case horizontal
+    /// Always split vertically (stacked).
+    case vertical
+
+    init?(token: String) {
+        switch token.lowercased() {
+        case "longer_edge": self = .longerEdge
+        case "horizontal": self = .horizontal
+        case "vertical": self = .vertical
+        default: return nil
+        }
+    }
+}
+
 /// One BSP tree per display. Pure data structure + algorithms; knows nothing
 /// about the Accessibility API. Geometry-dependent operations (focus/resize)
 /// take a precomputed `frames` map so they stay testable.
@@ -41,25 +61,20 @@ final class BSPTree {
     /// `focusedFrame` is the current rect of the focused window, used to pick the
     /// split orientation along its longer edge when no preselection is set.
     /// `ratio` is the new split's share for its first child (config `default_ratio`).
-    @discardableResult
     func insert(_ win: WinID,
                 focusedFrame: CGRect? = nil,
                 insertAt: InsertAt = .after,
-                autoSplit: String = "longer_edge",
-                ratio: Double = 0.5) -> Bool {
-        guard root != nil else {
-            root = BSPNode(leaf: win)
+                autoSplit: AutoSplit = .longerEdge,
+                ratio: Double = 0.5) {
+        guard let root = root else {
+            self.root = BSPNode(leaf: win)
             focused = win
-            return true
+            return
         }
 
-        let target: BSPNode
-        if let f = focused, let node = root?.findLeaf(f) {
-            target = node
-        } else {
-            target = root!.rightmostLeaf()
-        }
-        guard let oldWin = target.windowID else { return false }
+        // `findLeaf`/`rightmostLeaf` return leaves, so `windowID` below is always non-nil.
+        let target = focused.flatMap { root.findLeaf($0) } ?? root.rightmostLeaf()
+        guard let oldWin = target.windowID else { return }
 
         let orientation = preselect ?? autoOrientation(focusedFrame, autoSplit: autoSplit)
         preselect = nil
@@ -70,14 +85,13 @@ final class BSPTree {
         let split = BSPNode(split: orientation, ratio: ratio, first: first, second: second)
         replace(target, with: split)
         focused = win
-        return true
     }
 
-    private func autoOrientation(_ frame: CGRect?, autoSplit: String) -> Orientation {
+    private func autoOrientation(_ frame: CGRect?, autoSplit: AutoSplit) -> Orientation {
         switch autoSplit {
-        case "horizontal": return .horizontal
-        case "vertical": return .vertical
-        default:
+        case .horizontal: return .horizontal
+        case .vertical: return .vertical
+        case .longerEdge:
             guard let f = frame else { return .horizontal }
             return f.width >= f.height ? .horizontal : .vertical
         }
@@ -99,9 +113,7 @@ final class BSPTree {
         replace(parent, with: sibling)
 
         // Refocus if the focused window is no longer present.
-        if let f = focused, root?.findLeaf(f) != nil {
-            // still valid
-        } else {
+        if focused == nil || root?.findLeaf(focused!) == nil {
             focused = sibling.leftmostLeaf().windowID
         }
     }

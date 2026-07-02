@@ -63,14 +63,6 @@ extension BSPNode {
         }
     }
 
-    /// Number of leaves in this subtree.
-    var leafCount: Int {
-        switch kind {
-        case .leaf: return 1
-        case .split(_, _, let a, let b): return a.leafCount + b.leafCount
-        }
-    }
-
     /// The leaf node holding `id`, if present in this subtree.
     func findLeaf(_ id: WinID) -> BSPNode? {
         switch kind {

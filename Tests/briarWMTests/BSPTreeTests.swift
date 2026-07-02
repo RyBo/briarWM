@@ -18,6 +18,55 @@ import Foundation
         #expect(o2 == .vertical)
     }
 
+    @Test func autoSplitHorizontalIgnoresAspect() {
+        // A tall focused frame would pick .vertical by longer-edge; the explicit
+        // .horizontal override must win regardless of the frame's aspect ratio.
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 400, height: 1000),
+                 autoSplit: .horizontal)
+        guard case .split(let o, _, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
+        #expect(o == .horizontal)
+    }
+
+    @Test func autoSplitVerticalIgnoresAspect() {
+        // A wide focused frame would pick .horizontal by longer-edge; the explicit
+        // .vertical override must win regardless.
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 400),
+                 autoSplit: .vertical)
+        guard case .split(let o, _, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
+        #expect(o == .vertical)
+    }
+
+    @Test func insertBeforePlacesNewWindowFirst() {
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 800),
+                 insertAt: .before)
+        #expect(t.root!.leafWindowIDs() == [WinID(2), WinID(1)])   // new window becomes first child
+    }
+
+    @Test func resizeSingleWindowIsNoOp() {
+        // One window → root is a leaf, so there's no split on any axis to slide.
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        let frames: [WinID: CGRect] = [WinID(1): CGRect(x: 0, y: 0, width: 1000, height: 800)]
+        t.resize(WinID(1), direction: .right, deltaPx: 100, frames: frames)
+        #expect(t.root?.isLeaf == true)   // unchanged, no crash
+    }
+
+    @Test func describeRendersTree() {
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 400))   // H split
+        let text = t.root!.describe()
+        #expect(text.contains("H split"))
+        #expect(text.contains("win#1"))
+        #expect(text.contains("win#2"))
+    }
+
     @Test func insertUsesConfiguredRatio() {
         let t = BSPTree(display: 1)
         t.insert(WinID(1))

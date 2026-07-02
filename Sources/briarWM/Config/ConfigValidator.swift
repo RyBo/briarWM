@@ -14,7 +14,7 @@ enum ConfigValidator {
         if InsertAt(rawValue: config.layout.insertAt) == nil {
             out.append("layout.insert_at: \"\(config.layout.insertAt)\" is not \"after\" or \"before\"")
         }
-        if !["longer_edge", "horizontal", "vertical"].contains(config.layout.autoSplit) {
+        if AutoSplit(token: config.layout.autoSplit) == nil {
             out.append("layout.auto_split: \"\(config.layout.autoSplit)\" is not \"longer_edge\", \"horizontal\" or \"vertical\"")
         }
         for token in config.layout.presetCycle where LayoutPreset(token: token) == nil {

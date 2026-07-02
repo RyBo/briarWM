@@ -91,7 +91,7 @@ extension WindowManager {
                 tree.remove(id)
                 let dst = ensureTree(space: real, display: spaceDisplay[real] ?? tree.display)
                 dst.insert(id, focusedFrame: dst.focused.flatMap { desiredFrames[$0] },
-                           ratio: config.layout.defaultRatio)
+                           autoSplit: autoSplit, ratio: config.layout.defaultRatio)
                 if focusedID == id { focusedID = tree.focused }
                 dirty.insert(tree.space)
                 dirty.insert(real)

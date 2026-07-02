@@ -15,6 +15,11 @@ final class WindowManager: AXEventSink {
     /// The gaps as loaded from the config file — what `gaps reset` restores after
     /// runtime `gaps inner/outer ±N` tweaks.
     private(set) var baseGaps: Gaps
+    /// The config `auto_split` token as a typed enum — the single conversion point shared
+    /// by every `BSPTree.insert` call site. `internal` so the +Commands/+Spaces extensions
+    /// can read it. Falls back to `.longerEdge` for an unrecognized token (already flagged
+    /// by `ConfigValidator`).
+    var autoSplit: AutoSplit { AutoSplit(token: config.layout.autoSplit) ?? .longerEdge }
     let screens = ScreenManager()
     let registry = WindowRegistry()
     let hotkeys = HotkeyManager()
@@ -177,7 +182,7 @@ final class WindowManager: AXEventSink {
         let focusedFrame = tree.focused.flatMap { desiredFrames[$0] } ?? window.frame
         tree.insert(id, focusedFrame: focusedFrame,
                     insertAt: InsertAt(rawValue: config.layout.insertAt) ?? .after,
-                    autoSplit: config.layout.autoSplit,
+                    autoSplit: autoSplit,
                     ratio: config.layout.defaultRatio)
         if focus { focusedID = id }
         Log.logger.debug("tile \(id) \(window.title ?? "?") on display \(display) space \(space)")

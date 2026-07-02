@@ -111,7 +111,7 @@ extension WindowManager {
                 ?? activeSpace[display] ?? pseudoSpace(display)
             let tree = ensureTree(space: space, display: display)
             tree.insert(fid, focusedFrame: tree.focused.flatMap { desiredFrames[$0] },
-                        ratio: config.layout.defaultRatio)
+                        autoSplit: autoSplit, ratio: config.layout.defaultRatio)
             retile(tree)
         } else if let tree = treeContaining(fid) {
             tree.remove(fid)
@@ -187,7 +187,7 @@ extension WindowManager {
         if focusedID == fid { focusedID = srcTree.focused }
         let dst = ensureTree(space: target, display: display)
         dst.insert(fid, focusedFrame: dst.focused.flatMap { desiredFrames[$0] },
-                   ratio: config.layout.defaultRatio)
+                   autoSplit: autoSplit, ratio: config.layout.defaultRatio)
         retile(srcTree)                                   // active source → gap closes
         retile(dst, force: true)                          // size it even though off-screen
         if config.layout.moveFollowsFocus { switchToDesktop(index) }
