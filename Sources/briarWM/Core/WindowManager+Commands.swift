@@ -38,8 +38,11 @@ extension WindowManager {
             tree.swap(fid, target)
             retile(tree)
         } else {
-            tree.remove(fid)
-            targetTree.insert(fid, focusedFrame: desiredFrames[target], ratio: config.layout.defaultRatio)
+            // detach (not raw remove) so a fullscreen window doesn't stay zoomed on the
+            // destination monitor; honor the configured auto_split on the cross-tree insert.
+            detach(fid, from: tree)
+            targetTree.insert(fid, focusedFrame: desiredFrames[target],
+                              autoSplit: autoSplit, ratio: config.layout.defaultRatio)
             targetTree.focused = fid
             focusedID = fid
             retile(tree)
@@ -186,8 +189,7 @@ extension WindowManager {
               let target = userSpaceID(at: index, in: ds.spaces), target != srcTree.space else { return }
 
         spaces.moveWindow(wid, toSpace: target)           // window-server move (no AX frame change)
-        srcTree.remove(fid)
-        if focusedID == fid { focusedID = srcTree.focused }
+        detach(fid, from: srcTree)                         // clears zoom/focus/frame bookkeeping
         let dst = ensureTree(space: target, display: display)
         dst.insert(fid, focusedFrame: insertionHint(for: dst),
                    autoSplit: autoSplit, ratio: config.layout.defaultRatio)
