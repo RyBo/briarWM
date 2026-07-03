@@ -114,7 +114,10 @@ extension WindowManager {
                         autoSplit: autoSplit, ratio: config.layout.defaultRatio)
             retile(tree)
         } else if let tree = treeContaining(fid) {
-            tree.remove(fid)
+            // Route through detach (not raw tree.remove) so a zoomed window doesn't keep
+            // zoomedID set — otherwise unfloating it later re-applies the fullscreen
+            // override. newFocus: fid keeps focus on the window we just floated.
+            detach(fid, from: tree, newFocus: fid)
             registry.setFloating(fid, true)
             retile(tree)
         }
