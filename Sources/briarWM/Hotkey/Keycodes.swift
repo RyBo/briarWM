@@ -9,36 +9,33 @@ struct KeyCombo: Equatable, Hashable {
 
 enum Keycodes {
 
+    /// The one source of truth for modifier names → Carbon masks. Every accepted spelling
+    /// (including the win/meta aliases for Cmd) lives here once; `knownModifierNames` and
+    /// both `modifierMask` overloads derive from it, so the three never drift apart.
+    private static let modifierMasks: [String: UInt32] = [
+        "alt": UInt32(optionKey), "option": UInt32(optionKey), "opt": UInt32(optionKey),
+        "cmd": UInt32(cmdKey), "command": UInt32(cmdKey), "super": UInt32(cmdKey),
+        "win": UInt32(cmdKey), "meta": UInt32(cmdKey),
+        "ctrl": UInt32(controlKey), "control": UInt32(controlKey),
+        "shift": UInt32(shiftKey),
+        "hyper": UInt32(cmdKey | optionKey | controlKey | shiftKey),
+    ]
+
     /// Carbon modifier mask for a single token, resolving `mod`/`$mod` to `defaultMod`.
     /// Returns nil if the token is not a modifier (i.e. it's the key itself).
     static func modifierMask(for token: String, defaultMod: String) -> UInt32? {
-        switch token.lowercased() {
-        case "mod", "$mod": return modifierMask(forName: defaultMod)
-        case "alt", "option", "opt": return UInt32(optionKey)
-        case "cmd", "command", "super", "win", "meta": return UInt32(cmdKey)
-        case "ctrl", "control": return UInt32(controlKey)
-        case "shift": return UInt32(shiftKey)
-        case "hyper": return UInt32(cmdKey | optionKey | controlKey | shiftKey)
-        default: return nil
-        }
+        let name = token.lowercased()
+        if name == "mod" || name == "$mod" { return modifierMask(forName: defaultMod) }
+        return modifierMasks[name]
     }
 
     /// The names `modifierMask(forName:)` maps deliberately — anything else silently
     /// falls back to alt, so config validation flags unknown names against this set.
-    static let knownModifierNames: Set<String> = [
-        "alt", "option", "opt", "cmd", "command", "super",
-        "ctrl", "control", "shift", "hyper",
-    ]
+    static let knownModifierNames: Set<String> = Set(modifierMasks.keys)
 
     /// Carbon mask for the configured default modifier name (falls back to Alt).
     static func modifierMask(forName name: String) -> UInt32 {
-        switch name.lowercased() {
-        case "cmd", "command", "super": return UInt32(cmdKey)
-        case "ctrl", "control": return UInt32(controlKey)
-        case "shift": return UInt32(shiftKey)
-        case "hyper": return UInt32(cmdKey | optionKey | controlKey | shiftKey)
-        default: return UInt32(optionKey) // alt / option
-        }
+        modifierMasks[name.lowercased()] ?? UInt32(optionKey) // unknown → alt / option
     }
 
     /// Virtual keycode for a key name, or nil if unknown.

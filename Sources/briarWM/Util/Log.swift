@@ -18,6 +18,7 @@ enum Log {
         let fileURL = logFileURL
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        rotateIfNeeded(at: fileURL)
 
         LoggingSystem.bootstrap { label in
             var handlers: [any LogHandler] = [StreamLogHandler.standardError(label: label)]
@@ -29,6 +30,17 @@ enum Log {
         var l = Logger(label: "briarWM")
         l.logLevel = level
         logger = l
+    }
+
+    /// One-file rotation: if the log at `url` is larger than `limit` (default 5 MB),
+    /// move it aside to `briarWM.log.1` (replacing any previous `.1`) and start fresh.
+    /// Best-effort — any failure just leaves the existing log in place.
+    static func rotateIfNeeded(at url: URL, limit: Int = 5 * 1024 * 1024) {
+        guard let size = try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int, size > limit else { return }
+        let rolled = url.appendingPathExtension("1")
+        try? FileManager.default.removeItem(at: rolled)
+        try? FileManager.default.moveItem(at: url, to: rolled)
     }
 }
 
@@ -49,7 +61,7 @@ struct FileLogHandler: LogHandler, @unchecked Sendable {
             FileManager.default.createFile(atPath: fileURL.path, contents: nil)
         }
         guard let h = try? FileHandle(forWritingTo: fileURL) else { return nil }
-        h.seekToEndOfFile()
+        _ = try? h.seekToEnd()
         self.handle = h
     }
 
@@ -58,14 +70,13 @@ struct FileLogHandler: LogHandler, @unchecked Sendable {
         set { metadata[key] = newValue }
     }
 
-    func log(level: Logger.Level, message: Logger.Message, metadata: Logger.Metadata?,
-             source: String, file: String, function: String, line: UInt) {
+    func log(event: LogEvent) {
         let ts = Self.formatter.string(from: Date())
-        let extra = (metadata ?? [:]).merging(self.metadata) { a, _ in a }
+        let extra = (event.metadata ?? [:]).merging(self.metadata) { a, _ in a }
         let suffix = extra.isEmpty ? "" : " " + extra.map { "\($0)=\($1)" }.joined(separator: " ")
-        let text = "\(ts) [\(level)] \(message)\(suffix)\n"
+        let text = "\(ts) [\(event.level)] \(event.message)\(suffix)\n"
         if let data = text.data(using: .utf8) {
-            handle.write(data)
+            try? handle.write(contentsOf: data)
         }
     }
 }

@@ -1,5 +1,4 @@
 import ApplicationServices
-import CoreGraphics
 
 /// Receives high-level AX events. The WindowManager implements this.
 protocol AXEventSink: AnyObject {

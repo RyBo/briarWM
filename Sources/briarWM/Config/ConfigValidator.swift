@@ -14,7 +14,7 @@ enum ConfigValidator {
         if InsertAt(rawValue: config.layout.insertAt) == nil {
             out.append("layout.insert_at: \"\(config.layout.insertAt)\" is not \"after\" or \"before\"")
         }
-        if !["longer_edge", "horizontal", "vertical"].contains(config.layout.autoSplit) {
+        if AutoSplit(token: config.layout.autoSplit) == nil {
             out.append("layout.auto_split: \"\(config.layout.autoSplit)\" is not \"longer_edge\", \"horizontal\" or \"vertical\"")
         }
         for token in config.layout.presetCycle where LayoutPreset(token: token) == nil {
@@ -23,6 +23,9 @@ enum ConfigValidator {
         for (name, ratio) in [("layout.default_ratio", config.layout.defaultRatio),
                               ("layout.main_ratio", config.layout.mainRatio)] where !(ratio > 0 && ratio < 1) {
             out.append("\(name): \(ratio) is outside (0, 1)")
+        }
+        if config.layout.spacePollInterval < 0 {
+            out.append("layout.space_poll_interval: negative disables the backstop poll — use 0 to disable explicitly")
         }
 
         out += bindingIssues(config.keybindings, context: "keybindings", config: config)

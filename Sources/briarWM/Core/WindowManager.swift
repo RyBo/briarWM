@@ -15,6 +15,11 @@ final class WindowManager: AXEventSink {
     /// The gaps as loaded from the config file — what `gaps reset` restores after
     /// runtime `gaps inner/outer ±N` tweaks.
     private(set) var baseGaps: Gaps
+    /// The config `auto_split` token as a typed enum — the single conversion point shared
+    /// by every `BSPTree.insert` call site. `internal` so the +Commands/+Spaces extensions
+    /// can read it. Falls back to `.longerEdge` for an unrecognized token (already flagged
+    /// by `ConfigValidator`).
+    var autoSplit: AutoSplit { AutoSplit(token: config.layout.autoSplit) ?? .longerEdge }
     let screens = ScreenManager()
     let registry = WindowRegistry()
     let hotkeys = HotkeyManager()
@@ -129,7 +134,7 @@ final class WindowManager: AXEventSink {
         axApp.start()
         var dirty: Set<SpaceID> = []
         reconcileApp(pid: pid, dirty: &dirty)   // tab-aware adopt/rebind/skip
-        dirty.forEach { if let t = trees[$0] { retile(t) } }
+        retile(dirty: dirty)
     }
 
     func removeApp(pid: pid_t) {
@@ -143,7 +148,7 @@ final class WindowManager: AXEventSink {
             if let tree = forget(id) { changed.insert(tree.space) }
         }
         floated.forEach { forget($0) }                             // floating windows must not leak either
-        changed.forEach { if let t = trees[$0] { retile(t) } }     // only active trees apply frames
+        retile(dirty: changed)                                     // only active trees apply frames
     }
 
     // MARK: - Window adoption / filtering
@@ -174,10 +179,10 @@ final class WindowManager: AXEventSink {
             return
         }
         let tree = ensureTree(space: space, display: display)
-        let focusedFrame = tree.focused.flatMap { desiredFrames[$0] } ?? window.frame
+        let focusedFrame = insertionHint(for: tree) ?? window.frame
         tree.insert(id, focusedFrame: focusedFrame,
                     insertAt: InsertAt(rawValue: config.layout.insertAt) ?? .after,
-                    autoSplit: config.layout.autoSplit,
+                    autoSplit: autoSplit,
                     ratio: config.layout.defaultRatio)
         if focus { focusedID = id }
         Log.logger.debug("tile \(id) \(window.title ?? "?") on display \(display) space \(space)")
@@ -232,14 +237,30 @@ final class WindowManager: AXEventSink {
     @discardableResult
     func forget(_ id: WinID, tree: BSPTree? = nil, newFocus: WinID? = nil) -> BSPTree? {
         let tree = tree ?? anyTreeContaining(id)
-        tree?.remove(id)
+        if let tree {
+            detach(id, from: tree, newFocus: newFocus)
+        } else {                                        // not in any tree: still drop the bookkeeping
+            desiredFrames.removeValue(forKey: id)
+            stickyOnce.remove(id)
+            if zoomedID == id { zoomedID = nil }
+            if focusedID == id { focusedID = newFocus }
+        }
         registry.unregister(id)
+        pruneEmptyParkedTrees()
+        return tree
+    }
+
+    /// Remove `id` from `tree` and drop the per-window tiling bookkeeping tied to its slot —
+    /// desired frame, sticky observation, zoom — repointing focus to the tree's remembered
+    /// window (or `newFocus`) when `id` was focused. The shared core of every "window leaves a
+    /// tree" path (`forget`, `windowMinimized`, reconcile re-home/float); callers layer their
+    /// own extra cleanup (registry unregister, minimize park, re-insert elsewhere) on top.
+    func detach(_ id: WinID, from tree: BSPTree, newFocus: WinID? = nil) {
+        tree.remove(id)
         desiredFrames.removeValue(forKey: id)
         stickyOnce.remove(id)
         if zoomedID == id { zoomedID = nil }
-        if focusedID == id { focusedID = newFocus ?? tree?.focused }
-        pruneEmptyParkedTrees()
-        return tree
+        if focusedID == id { focusedID = newFocus ?? tree.focused }
     }
 
     private func pruneEmptyParkedTrees() { parkedTrees.removeAll { $0.isEmpty } }
@@ -285,9 +306,25 @@ final class WindowManager: AXEventSink {
         return nil
     }
 
+    /// The display of the focused window, falling back to the first display (id 0 if none).
+    /// The default target for desktop-switch commands with nothing focused.
+    func focusedDisplay() -> DisplayID {
+        focusedID.flatMap { treeContaining($0)?.display } ?? screens.displayIDs.first ?? 0
+    }
+
+    /// The frame to seed a newly-inserted leaf's split from: the tree's focused window's
+    /// desired frame, if any. nil when the tree is empty or its focus has no recorded frame —
+    /// the caller supplies a fallback (the window's own frame) or lets `BSPTree.insert` pick.
+    func insertionHint(for tree: BSPTree) -> CGRect? { tree.focused.flatMap { desiredFrames[$0] } }
+
     // MARK: - Tiling
 
     func retileAll() { trees.values.forEach { retile($0) } }
+
+    /// Retile just the Spaces a change dirtied. Skips any that have no tree.
+    func retile(dirty: Set<SpaceID>) {
+        for s in dirty { if let t = trees[s] { retile(t) } }
+    }
 
     /// Retile the given Spaces plus every visible one — the visible pass applies frames
     /// that were only computed while their desktop was hidden (e.g. a window that
@@ -318,11 +355,8 @@ final class WindowManager: AXEventSink {
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
         var dirty: Set<SpaceID> = []
         reconcileApp(pid: pid, dirty: &dirty)   // adopt OR rebind OR ignore
-        if let id = registry.id(for: element) {                         // nil ⇒ ignored background tab
-            focusedID = id
-            treeContaining(id)?.focused = id
-        }
-        dirty.forEach { if let t = trees[$0] { retile(t) } }
+        if let id = registry.id(for: element) { setFocused(id) }        // nil ⇒ ignored background tab
+        retile(dirty: dirty)
     }
 
     func windowDestroyed(_ element: AXUIElement, pid: pid_t) {
@@ -350,11 +384,8 @@ final class WindowManager: AXEventSink {
         guard config.layout.reflowOnMinimize else { return }
         guard let id = registry.id(for: element), !registry.isFloating(id) else { return }
         guard let tree = anyTreeContaining(id) else { return }   // already out of a tree → nothing to do
-        tree.remove(id)
+        detach(id, from: tree)                         // drops the stale desired frame too
         registry.setMinimized(id, true)
-        desiredFrames.removeValue(forKey: id)          // stop applying a stale frame
-        if zoomedID == id { zoomedID = nil }
-        if focusedID == id { focusedID = tree.focused }
         pruneEmptyParkedTrees()
         Log.logger.debug("minimize park \(id)")
         retile(tree)
@@ -391,7 +422,7 @@ final class WindowManager: AXEventSink {
         var dirty: Set<SpaceID> = []
         reconcileApp(pid: pid, dirty: &dirty)
         if let id = registry.id(for: focused) { setFocused(id) }    // now == the rebound leaf
-        dirty.forEach { if let t = trees[$0] { retile(t) } }
+        retile(dirty: dirty)
     }
 
     func windowMovedOrResized(_ element: AXUIElement, pid: pid_t) {
@@ -462,8 +493,7 @@ final class WindowManager: AXEventSink {
     /// Assert OS keyboard focus onto a managed window (and update the cache).
     func focus(windowID id: WinID) {
         guard let window = registry.window(for: id) else { return }
-        focusedID = id
-        treeContaining(id)?.focused = id
+        setFocused(id)
         // Bring the target's process frontmost and make its window key. On macOS 14+ this
         // SkyLight path is the only reliable cross-app focus transfer; activate() is only a
         // fallback for when the private symbols are unavailable (and is itself unreliable).

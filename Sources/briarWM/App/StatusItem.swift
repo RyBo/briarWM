@@ -45,7 +45,7 @@ final class StatusItemController {
     /// Show a config load failure in the menu bar (first line in the menu, full error in
     /// the tooltip), or clear it (`message == nil`) once a reload succeeds.
     func showConfigError(_ message: String?) {
-        configError = message.map { String($0.split(separator: "\n", maxSplits: 1)[0]) }
+        configError = message.map { $0.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? "" }
         errorItem.isHidden = configError == nil
         errorItem.title = configError.map { "⚠︎ Config error: \($0)" } ?? ""
         item.button?.toolTip = message

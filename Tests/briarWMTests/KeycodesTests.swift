@@ -24,6 +24,15 @@ import Carbon.HIToolbox
         #expect(hyper?.modifiers == UInt32(cmdKey | optionKey | controlKey | shiftKey))
     }
 
+    @Test func winAndMetaResolveToCmd() {
+        // win / meta are Cmd aliases, accepted everywhere the other spellings are.
+        #expect(KeyCombo.parse("win+t", defaultMod: "alt")?.modifiers == UInt32(cmdKey))
+        #expect(KeyCombo.parse("meta+t", defaultMod: "alt")?.modifiers == UInt32(cmdKey))
+        #expect(Keycodes.modifierMask(forName: "win") == UInt32(cmdKey))
+        #expect(Keycodes.modifierMask(forName: "meta") == UInt32(cmdKey))
+        #expect(KeyCombo.parse("mod+t", defaultMod: "win")?.modifiers == UInt32(cmdKey))
+    }
+
     @Test func unknownKeyReturnsNil() {
         #expect(KeyCombo.parse("alt+nonsense", defaultMod: "alt") == nil)
         #expect(KeyCombo.parse("", defaultMod: "alt") == nil)

@@ -13,6 +13,10 @@ import Testing
     @Test func resize() {
         #expect(Action.parse("resize right 40") == .resize(.right, 40))
         #expect(Action.parse("resize left") == .resize(.left, Action.defaultResizeStep))
+        #expect(Action.parse("resize left 25") == .resize(.left, 25))
+        // A present-but-unparseable amount must fail (so the validator flags it),
+        // not silently fall back to the default step.
+        #expect(Action.parse("resize left oops") == nil)
     }
 
     @Test func splitAndPreselect() {

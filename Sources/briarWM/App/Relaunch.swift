@@ -8,7 +8,13 @@ enum Relaunch {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
         proc.arguments = Array(CommandLine.arguments.dropFirst())
-        try? proc.run()
-        NSApp.terminate(nil)
+        do {
+            try proc.run()
+            NSApp.terminate(nil)
+        } catch {
+            // A failed relaunch must not become a silent exit — stay alive so the running
+            // instance keeps managing windows.
+            Log.logger.error("relaunch failed: \(error)")
+        }
     }
 }
