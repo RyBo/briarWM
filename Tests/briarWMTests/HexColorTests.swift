@@ -44,6 +44,15 @@ import Foundation
         #expect(HexColor(hex: "22D3E") == nil)      // wrong length (5), no hash
     }
 
+    @Test func rejectsFullwidthHexDigits() {
+        // Swift's `Character.isHexDigit` accepts fullwidth compatibility forms (U+FF10–FF19,
+        // U+FF21–FF26, …) that `Int(_:radix:)` refuses. These have the right length (6) and
+        // pass an `.isHexDigit`-only gate, so they must return nil rather than trap on the
+        // force-unwraps in byte()/nibble().
+        #expect(HexColor(hex: "ＦＦ００００") == nil)     // fullwidth "FF0000"
+        #expect(HexColor(hex: "＃ＦＦ００００") == nil)   // fullwidth, with fullwidth hash
+    }
+
     @Test func decodesFromJSONString() throws {
         struct Box: Decodable { let color: HexColor }
         let box = try JSONDecoder().decode(Box.self, from: Data(##"{ "color": "#22D3EE" }"##.utf8))

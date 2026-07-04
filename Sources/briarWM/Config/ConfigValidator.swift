@@ -42,6 +42,9 @@ enum ConfigValidator {
         if !(fi.opacity >= 0 && fi.opacity <= 1) {
             out.append("focus_indicator.opacity: \(fi.opacity) is outside [0, 1]")
         }
+        if !(fi.restOpacity >= 0 && fi.restOpacity <= 1) {
+            out.append("focus_indicator.rest_opacity: \(fi.restOpacity) is outside [0, 1]")
+        }
 
         out += bindingIssues(config.keybindings, context: "keybindings", config: config)
         for (name, binds) in config.modes.sorted(by: { $0.key < $1.key }) {

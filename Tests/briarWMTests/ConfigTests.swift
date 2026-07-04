@@ -52,6 +52,7 @@ import Foundation
         #expect(fi.hold == 0.0)
         #expect(fi.fadeOut == 0.30)
         #expect(fi.opacity == 0.55)
+        #expect(fi.restOpacity == 0.0)   // default: border only shows during the pulse
         #expect(fi.glow == 5.0)
     }
 
@@ -61,7 +62,7 @@ import Foundation
           "focus_indicator": {
             "enabled": false, "color": "#FF0000", "border_width": 3,
             "corner_radius": 10, "fade_in": 0.2, "hold": 0.3, "fade_out": 0.5,
-            "opacity": 0.7, "glow": 12
+            "opacity": 0.7, "rest_opacity": 0.15, "glow": 12
           }
         }
         """)
@@ -74,15 +75,17 @@ import Foundation
         #expect(fi.hold == 0.3)
         #expect(fi.fadeOut == 0.5)
         #expect(fi.opacity == 0.7)
+        #expect(fi.restOpacity == 0.15)
         #expect(fi.glow == 12)
     }
 
     @Test func focusIndicatorPartialSectionKeepsPerKeyDefaults() throws {
-        // A partial block: only `color` and `opacity` overridden — the rest keep their
-        // single-source defaults (snake_case keys must map).
-        let fi = try decode(##"{ "focus_indicator": { "color": "#000000", "opacity": 0.9 } }"##).focusIndicator
+        // A partial block: only `color`, `opacity` and `rest_opacity` overridden — the rest
+        // keep their single-source defaults (snake_case keys must map).
+        let fi = try decode(##"{ "focus_indicator": { "color": "#000000", "opacity": 0.9, "rest_opacity": 0.2 } }"##).focusIndicator
         #expect(fi.color == HexColor(hex: "#000000"))
         #expect(fi.opacity == 0.9)
+        #expect(fi.restOpacity == 0.2)
         #expect(fi.enabled)              // default
         #expect(fi.borderWidth == 1.5)   // default
         #expect(fi.fadeIn == 0.14)       // default

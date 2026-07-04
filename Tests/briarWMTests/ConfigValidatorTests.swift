@@ -141,6 +141,24 @@ import Testing
         }
     }
 
+    @Test func outOfRangeRestOpacityIsFlagged() {
+        for bad in [-0.1, 1.5] {
+            var c = Config()
+            c.focusIndicator = FocusIndicator(restOpacity: bad)
+            let issues = ConfigValidator.issues(in: c)
+            #expect(issues.count == 1)
+            #expect(issues[0].contains("rest_opacity"))
+        }
+    }
+
+    @Test func boundaryRestOpacityIsClean() {
+        for ok in [0.0, 1.0] {
+            var c = Config()
+            c.focusIndicator = FocusIndicator(restOpacity: ok)
+            #expect(ConfigValidator.issues(in: c).isEmpty)   // 0 and 1 are in range
+        }
+    }
+
     @Test func emptyRuleMatchIsFlagged() {
         var c = Config()
         c.rules = [AppRule(match: Match(bundleId: nil, titleRegex: nil), floating: true)]

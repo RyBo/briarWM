@@ -75,7 +75,10 @@ struct HexColor: Decodable, Equatable {
         var s = Substring(hex)
         if s.hasPrefix("#") { s = s.dropFirst() }
         let d = Array(s)
-        guard d.allSatisfy(\.isHexDigit) else { return nil }
+        // ASCII hex only. `Character.isHexDigit` also accepts fullwidth compatibility forms
+        // (e.g. "Ｆ" U+FF26) that `Int(_:radix:)` refuses — letting those past the gate would
+        // trap on the force-unwraps in byte()/nibble() and crash config load/hot-reload.
+        guard d.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
 
         func byte(_ chars: ArraySlice<Character>) -> Double { Double(Int(String(chars), radix: 16)!) / 255 }
         func nibble(_ c: Character) -> Double { Double(Int(String(c), radix: 16)! * 17) / 255 }
@@ -113,6 +116,10 @@ struct FocusIndicator: Decodable, Equatable {
     /// Peak opacity the bounce reaches, 0…1. Below 1 so the cue reads as a gentle pulse
     /// rather than a hard flash.
     var opacity: Double
+    /// Resting opacity the border settles at between pulses, 0…1. `0` (default) = the border
+    /// is invisible except during the pulse; `>0` = a persistent border that swells from this
+    /// rest level up to `opacity` on each focus switch and back down.
+    var restOpacity: Double
     /// Soft same-color glow feathering the stroke, in points (0 = a crisp hard line). This
     /// is what turns the border from a stark rectangle into a soft rim of light.
     var glow: CGFloat
@@ -125,6 +132,7 @@ struct FocusIndicator: Decodable, Equatable {
          hold: Double = 0.0,
          fadeOut: Double = 0.30,
          opacity: Double = 0.55,
+         restOpacity: Double = 0.0,
          glow: CGFloat = 5.0) {
         self.enabled = enabled
         self.color = color
@@ -134,6 +142,7 @@ struct FocusIndicator: Decodable, Equatable {
         self.hold = hold
         self.fadeOut = fadeOut
         self.opacity = opacity
+        self.restOpacity = restOpacity
         self.glow = glow
     }
 
@@ -143,6 +152,7 @@ struct FocusIndicator: Decodable, Equatable {
         case cornerRadius = "corner_radius"
         case fadeIn = "fade_in"
         case fadeOut = "fade_out"
+        case restOpacity = "rest_opacity"
     }
 
     init(from decoder: Decoder) throws {
@@ -156,6 +166,7 @@ struct FocusIndicator: Decodable, Equatable {
         hold = try c.decodeIfPresent(Double.self, forKey: .hold) ?? d.hold
         fadeOut = try c.decodeIfPresent(Double.self, forKey: .fadeOut) ?? d.fadeOut
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? d.opacity
+        restOpacity = try c.decodeIfPresent(Double.self, forKey: .restOpacity) ?? d.restOpacity
         glow = try c.decodeIfPresent(CGFloat.self, forKey: .glow) ?? d.glow
     }
 }

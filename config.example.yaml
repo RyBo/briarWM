@@ -20,6 +20,8 @@ focus_indicator:
   hold: 0.0             # peak plateau; 0 = swell straight into the fade
   fade_out: 0.30        # border fall time, seconds (soft trailing fade)
   opacity: 0.55         # peak opacity, 0–1 — lower is more subtle
+  rest_opacity: 0.0     # resting opacity between pulses, 0–1 — 0 = border only shows during
+                        # the pulse; >0 = a persistent border that pulses brighter on switch
   glow: 5.0             # soft same-color feather in points (0 = a crisp hard line)
 
 layout:

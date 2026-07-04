@@ -397,6 +397,7 @@ final class WindowManager: AXEventSink {
         pruneEmptyParkedTrees()
         Log.logger.debug("minimize park \(id)")
         retile(tree)
+        notifyFocusOverlay(pulse: false)   // detach's focus shift won't fire retile's notify if the tree isn't active
     }
 
     /// A window was un-minimized: re-insert it into its current Space's tree and reflow.
@@ -434,7 +435,14 @@ final class WindowManager: AXEventSink {
     }
 
     func windowMovedOrResized(_ element: AXUIElement, pid: pid_t) {
-        guard let id = registry.id(for: element), !registry.isFloating(id), zoomedID != id else { return }
+        guard let id = registry.id(for: element) else { return }
+        // A floating window carries its focus border along as it's dragged/resized — it has no
+        // tiled slot to snap back to, so just reposition the overlay when it's the focused one.
+        if registry.isFloating(id) {
+            if id == focusedID { notifyFocusOverlay(pulse: false) }
+            return
+        }
+        guard zoomedID != id else { return }
         guard let tree = treeContaining(id),
               let desired = desiredFrames[id],
               let current = registry.window(for: id)?.frame else { return }
@@ -468,15 +476,41 @@ final class WindowManager: AXEventSink {
     // MARK: - Focus overlay
 
     /// The focused window's visible frame in **Cocoa** coordinates (the overlay's drawing
-    /// space), or nil when the overlay must hide: indicator disabled, nothing focused, the
-    /// focus is on a hidden/parked desktop, or it's a fullscreen/zoomed window (no border on
-    /// something already filling the screen). Floating windows resolve to their live AX frame.
+    /// space), or nil when the overlay must hide. Common hide cases: indicator disabled,
+    /// nothing focused, a fullscreen/zoomed/minimized window (no border on something already
+    /// filling the screen or stowed in the Dock).
+    ///
+    /// Tiled windows use their computed slot (`desiredFrames`) and hide when their desktop is
+    /// hidden/parked (`isActive`). Floating windows aren't in any tree, so they resolve to
+    /// their live AX frame and hide when their real Space isn't the active one on its display
+    /// (the overlay panel joins all Spaces, so a float on a hidden desktop would otherwise
+    /// bleed its border onto the current one). In pseudo-Space mode every window counts active.
     private func focusOverlayFrame() -> CGRect? {
-        guard config.focusIndicator.enabled, let id = focusedID,
-              let tree = treeContaining(id), isActive(tree) else { return nil }
-        if id == zoomedID || registry.window(for: id)?.isFullscreen == true { return nil }
-        guard let ax = desiredFrames[id] ?? registry.window(for: id)?.frame else { return nil }
+        guard config.focusIndicator.enabled, let id = focusedID else { return nil }
+        let ax: CGRect
+        if registry.isFloating(id) {
+            guard let window = registry.window(for: id), !registry.isMinimized(id),
+                  !window.isFullscreen, floatIsOnActiveSpace(window),
+                  let frame = window.frame else { return nil }
+            ax = frame
+        } else {
+            guard let tree = treeContaining(id), isActive(tree) else { return nil }
+            if id == zoomedID || registry.window(for: id)?.isFullscreen == true { return nil }
+            guard let f = desiredFrames[id] ?? registry.window(for: id)?.frame else { return nil }
+            ax = f
+        }
         return Geometry.cocoaToAX(ax, primaryHeight: screens.primaryHeight)   // AX ⇄ Cocoa (self-inverse)
+    }
+
+    /// Whether a focused floating window sits on the active Space of its display, so its border
+    /// isn't drawn over the current Space while the float lives on a hidden desktop. A sticky
+    /// float (spanning every Space) is always visible. In pseudo-Space mode `resolveSpace` and
+    /// `activeSpace` both collapse to the display's pseudo-Space, so this is always true —
+    /// matching the fallback used elsewhere.
+    private func floatIsOnActiveSpace(_ window: AXWindow) -> Bool {
+        let display = displayForWindow(window)
+        let (space, sticky) = resolveSpace(window, display: display)
+        return sticky || activeSpace[display] == space
     }
 
     /// Push the current overlay state to the controller. `pulse` runs the border fade (real

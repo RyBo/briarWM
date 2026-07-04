@@ -124,6 +124,9 @@ extension WindowManager {
             registry.setFloating(fid, true)
             retile(tree)
         }
+        // The focused window is now a float (or newly tiled) — retile's internal notify only
+        // fires for windows in the retiled tree, so push the overlay update explicitly here.
+        notifyFocusOverlay(pulse: false)
     }
 
     func focusModeToggle() {
