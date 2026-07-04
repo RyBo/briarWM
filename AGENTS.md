@@ -14,6 +14,19 @@ make check      # validate ~/.config/briarWM/config.yaml  (or CONFIG=path)
 make sign       # self-sign so the Accessibility grant survives rebuilds
 ```
 
+## Branches, commits & PRs
+
+- **Never commit to `main`.** Start any new feature or bug fix on its own branch off
+  `main`: `feat/<short-name>`, `fix/<short-name>`, or `cleanup/<short-name>`. Open a PR
+  back into `main` and let it merge from there.
+- **Write commit messages like a person, not a bot.** Say what changed and why in plain,
+  direct language. Use a short imperative summary line, then a sentence or two of context
+  if it helps.
+- **No AI tells.** No em-dashes. No "comprehensive", "seamless", "robust", "leverage",
+  "delve", "streamline", or similar filler. No bulleted brag lists in the body. If a human
+  reviewer would roll their eyes at it, cut it.
+- Keep the subject line under ~70 characters. Reference issues when there is one.
+
 ## Toolchain gotchas (read before debugging build failures)
 
 - **Swift 5 language mode.** `Package.swift` sets `swiftLanguageModes: [.v5]`. The app is
