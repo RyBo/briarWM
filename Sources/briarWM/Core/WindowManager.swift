@@ -368,10 +368,39 @@ final class WindowManager: AXEventSink {
     // MARK: - AXEventSink
 
     func windowCreated(_ element: AXUIElement, pid: pid_t) {
+        // Capture before the reconcile: which leaves already existed (a rebind reuses an old
+        // id and must not relocate) and where the user is working — a focus event during
+        // adoption can already have moved `focusedID` onto the new window.
+        let before = Set(trees.values.flatMap(\.windowIDs))
+        let anchor = focusedID.flatMap { treeContaining($0) }
         var dirty: Set<SpaceID> = []
         reconcileApp(pid: pid, dirty: &dirty)   // adopt OR rebind OR ignore
+        relocateFreshWindow(element, pid: pid, bornBefore: before, anchor: anchor)
         if let id = registry.id(for: element) { setFocused(id) }        // nil ⇒ ignored background tab
         retile(dirty: dirty)
+    }
+
+    /// A new window can be *born* on a different display's desktop than the one the user is
+    /// working on (macOS cascades new windows relative to the app's last window, which may sit
+    /// on another monitor). i3 semantics: a new window opens on the focused workspace — so move
+    /// a freshly adopted window from the tree it was born into onto `anchor` and retile both;
+    /// applying the new frame carries it to the anchor's display. Only genuinely new leaves
+    /// move: rebound tabs (old WinID) and floating/sticky windows stay put.
+    private func relocateFreshWindow(_ element: AXUIElement, pid: pid_t,
+                                     bornBefore: Set<WinID>, anchor: BSPTree?) {
+        guard config.layout.newWindowFollowsFocus,
+              let id = registry.id(for: element), !bornBefore.contains(id),
+              !registry.isFloating(id),
+              let anchor, isActive(anchor),
+              let src = treeContaining(id), src !== anchor,
+              // Only user-driven creation relocates — a background app's window stays put.
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { return }
+        detach(id, from: src)
+        anchor.insert(id, focusedFrame: insertionHint(for: anchor),
+                      autoSplit: autoSplit, ratio: config.layout.defaultRatio)
+        retile(src)
+        retile(anchor)
+        Log.logger.debug("relocate new window \(id) to focused workspace (display \(anchor.display) space \(anchor.space))")
     }
 
     func windowDestroyed(_ element: AXUIElement, pid: pid_t) {
@@ -435,9 +464,14 @@ final class WindowManager: AXEventSink {
         if let id = registry.id(for: focused) { setFocused(id); return }
         guard manageTabs else { return }
         // A switch to a background tab: reconcile so the group's leaf rebinds to the now-front
-        // tab, then adopt the resulting focus.
+        // tab, then adopt the resulting focus. AX event order isn't guaranteed — a brand-new
+        // window can be adopted here before its `windowCreated` fires — so this path needs the
+        // relocation anchor too, captured before the reconcile for the same reasons.
+        let before = Set(trees.values.flatMap(\.windowIDs))
+        let anchor = focusedID.flatMap { treeContaining($0) }
         var dirty: Set<SpaceID> = []
         reconcileApp(pid: pid, dirty: &dirty)
+        relocateFreshWindow(focused, pid: pid, bornBefore: before, anchor: anchor)
         if let id = registry.id(for: focused) { setFocused(id) }    // now == the rebound leaf
         retile(dirty: dirty)
     }

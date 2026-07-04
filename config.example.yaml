@@ -30,6 +30,9 @@ layout:
   auto_split: longer_edge   # longer_edge | horizontal | vertical
   focus_wraps_monitors: true
   move_follows_focus: false   # `move workspace N`: follow the window to that desktop?
+  new_window_follows_focus: true # a new window opens on the focused desktop (i3-style), even
+                              # if macOS placed it on another display; false = tile it where
+                              # it appeared
   space_poll_interval: 1.5    # seconds; backstop sweep for drag-to-desktop. 0 disables.
                               # (takes effect on restart, not hot reload)
   manage_tabbed_windows: true # treat native macOS tabs (e.g. Ghostty) as one tile that

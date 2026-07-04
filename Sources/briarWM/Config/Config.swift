@@ -197,6 +197,11 @@ struct LayoutOptions: Decodable, Equatable {
     /// When true, `move workspace N` follows the window to that desktop. Default false
     /// (matches i3's "move container to workspace").
     var moveFollowsFocus: Bool
+    /// When true, a brand-new window opens on the focused desktop (i3-style) even if macOS
+    /// birthed it on another display's workspace (new windows cascade relative to the app's
+    /// last window, which may sit on another monitor). Default true; set false to tile it
+    /// wherever it appeared.
+    var newWindowFollowsFocus: Bool
     /// Seconds between background reconciliation sweeps that catch windows dragged to
     /// another desktop without a Space switch (those fire no AX/Space notification).
     /// `0` disables the backstop. Default 1.5s.
@@ -226,6 +231,7 @@ struct LayoutOptions: Decodable, Equatable {
          autoSplit: String = "longer_edge",
          focusWrapsMonitors: Bool = true,
          moveFollowsFocus: Bool = false,
+         newWindowFollowsFocus: Bool = true,
          spacePollInterval: Double = 1.5,
          presetCycle: [String] = LayoutOptions.defaultPresetCycle,
          mainRatio: Double = 0.6,
@@ -236,6 +242,7 @@ struct LayoutOptions: Decodable, Equatable {
         self.autoSplit = autoSplit
         self.focusWrapsMonitors = focusWrapsMonitors
         self.moveFollowsFocus = moveFollowsFocus
+        self.newWindowFollowsFocus = newWindowFollowsFocus
         self.spacePollInterval = spacePollInterval
         self.presetCycle = presetCycle
         self.mainRatio = mainRatio
@@ -249,6 +256,7 @@ struct LayoutOptions: Decodable, Equatable {
         case autoSplit = "auto_split"
         case focusWrapsMonitors = "focus_wraps_monitors"
         case moveFollowsFocus = "move_follows_focus"
+        case newWindowFollowsFocus = "new_window_follows_focus"
         case spacePollInterval = "space_poll_interval"
         case presetCycle = "preset_cycle"
         case mainRatio = "main_ratio"
@@ -264,6 +272,7 @@ struct LayoutOptions: Decodable, Equatable {
         autoSplit = try c.decodeIfPresent(String.self, forKey: .autoSplit) ?? d.autoSplit
         focusWrapsMonitors = try c.decodeIfPresent(Bool.self, forKey: .focusWrapsMonitors) ?? d.focusWrapsMonitors
         moveFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .moveFollowsFocus) ?? d.moveFollowsFocus
+        newWindowFollowsFocus = try c.decodeIfPresent(Bool.self, forKey: .newWindowFollowsFocus) ?? d.newWindowFollowsFocus
         spacePollInterval = try c.decodeIfPresent(Double.self, forKey: .spacePollInterval) ?? d.spacePollInterval
         presetCycle = try c.decodeIfPresent([String].self, forKey: .presetCycle) ?? d.presetCycle
         mainRatio = try c.decodeIfPresent(Double.self, forKey: .mainRatio) ?? d.mainRatio
