@@ -50,6 +50,7 @@ extension WindowManager {
 
         guard spaces.isAvailable else {                // pseudo-Space mode: just apply adoptions
             retileDirtyAndVisible(dirty)
+            notifyFocusOverlay(pulse: false)
             return
         }
 
@@ -66,6 +67,7 @@ extension WindowManager {
 
         retileDirtyAndVisible(dirty)
         repairFocusCache(moveFocus: moveFocus)
+        notifyFocusOverlay(pulse: false)               // reposition/hide after a Space shuffle
     }
 
     /// Re-point each tree at the display that currently owns its Space, marking any that moved dirty.
@@ -227,6 +229,7 @@ extension WindowManager {
 
         reconcileSpaces()
         retileAll()
+        notifyFocusOverlay(pulse: false)               // land the overlay on the right screen
     }
 
     /// Reinstate a parked tree on a (re)connected display. Prunes windows that closed while the

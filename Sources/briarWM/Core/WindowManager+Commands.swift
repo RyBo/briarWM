@@ -240,7 +240,9 @@ extension WindowManager {
         keymap = Keymap(config: config)
         currentMode = Keymap.defaultMode
         applyKeymap()
-        retileAll()
+        onConfigReloaded?(config)          // refresh the overlay's colors/metrics first…
+        retileAll()                        // …then retile, which repositions the halo
+        notifyFocusOverlay(pulse: false)   // reflect an enabled/disabled toggle immediately
         onConfigError?(nil)
         Log.logger.info("config reloaded")
     }

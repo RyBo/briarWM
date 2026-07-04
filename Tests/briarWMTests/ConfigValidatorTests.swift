@@ -112,6 +112,35 @@ import Testing
         #expect(issues.contains { $0.contains("[bad") })
     }
 
+    @Test func validFocusIndicatorIsClean() {
+        #expect(ConfigValidator.issues(in: Config()).isEmpty)   // defaults
+        var c = Config()
+        c.focusIndicator = FocusIndicator(borderWidth: 0, opacity: 0, glow: 0)
+        #expect(ConfigValidator.issues(in: c).isEmpty)          // zero is allowed, just not negative
+    }
+
+    @Test func negativeFocusIndicatorMetricsAreFlagged() {
+        var c = Config()
+        c.focusIndicator = FocusIndicator(borderWidth: -1, cornerRadius: -2, fadeIn: -0.1,
+                                          fadeOut: -0.2, glow: -3)
+        let issues = ConfigValidator.issues(in: c)
+        #expect(issues.contains { $0.contains("border_width") })
+        #expect(issues.contains { $0.contains("corner_radius") })
+        #expect(issues.contains { $0.contains("fade_in") })
+        #expect(issues.contains { $0.contains("fade_out") })
+        #expect(issues.contains { $0.contains("glow") })
+    }
+
+    @Test func outOfRangeOpacityIsFlagged() {
+        for bad in [-0.1, 1.5] {
+            var c = Config()
+            c.focusIndicator = FocusIndicator(opacity: bad)
+            let issues = ConfigValidator.issues(in: c)
+            #expect(issues.count == 1)
+            #expect(issues[0].contains("opacity"))
+        }
+    }
+
     @Test func emptyRuleMatchIsFlagged() {
         var c = Config()
         c.rules = [AppRule(match: Match(bundleId: nil, titleRegex: nil), floating: true)]

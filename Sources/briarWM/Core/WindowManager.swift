@@ -75,6 +75,11 @@ final class WindowManager: AXEventSink {
     /// Notified when a config reload fails (the error message) or succeeds again (nil),
     /// so the status item can show/clear a persistent error indicator.
     var onConfigError: ((String?) -> Void)?
+    /// Hands the focus overlay the focused window's visible Cocoa frame (or nil = hide) and
+    /// whether the focus target just changed (→ run the border pulse). See `focusOverlayFrame`.
+    var onFocusOverlayUpdate: ((CGRect?, Bool) -> Void)?
+    /// Fired after a successful config reload so the overlay picks up new colors/metrics.
+    var onConfigReloaded: ((Config) -> Void)?
 
     init(config: Config) {
         self.config = config
@@ -348,6 +353,8 @@ final class WindowManager: AXEventSink {
         guard isActive(tree) || force else { return }
         Tiler.apply(frames, registry: registry, current: passFrames)
         if let z = zoomedID, tree.contains(z) { registry.window(for: z)?.raise() }
+        // Keep the halo tracking the focused window's new slot on resize/move/reflow.
+        if let fid = focusedID, tree.contains(fid) { notifyFocusOverlay(pulse: false) }
     }
 
     // MARK: - AXEventSink
@@ -375,6 +382,7 @@ final class WindowManager: AXEventSink {
         }
         let tree = forget(id)                          // could be parked (its monitor is asleep)
         if let tree { retile(tree) }                   // no-op for a parked tree (display gone)
+        notifyFocusOverlay(pulse: false)               // hide/reposition after focus fell away
     }
 
     /// A tiled window was minimized: remove it from its tree and reflow the rest so no empty
@@ -451,9 +459,29 @@ final class WindowManager: AXEventSink {
 
     /// Update the focus cache without touching OS keyboard focus.
     func setFocused(_ id: WinID) {
+        let changed = focusedID != id
         focusedID = id
         treeContaining(id)?.focused = id
+        notifyFocusOverlay(pulse: changed)   // pulse only on a real focus switch
     }
+
+    // MARK: - Focus overlay
+
+    /// The focused window's visible frame in **Cocoa** coordinates (the overlay's drawing
+    /// space), or nil when the overlay must hide: indicator disabled, nothing focused, the
+    /// focus is on a hidden/parked desktop, or it's a fullscreen/zoomed window (no border on
+    /// something already filling the screen). Floating windows resolve to their live AX frame.
+    private func focusOverlayFrame() -> CGRect? {
+        guard config.focusIndicator.enabled, let id = focusedID,
+              let tree = treeContaining(id), isActive(tree) else { return nil }
+        if id == zoomedID || registry.window(for: id)?.isFullscreen == true { return nil }
+        guard let ax = desiredFrames[id] ?? registry.window(for: id)?.frame else { return nil }
+        return Geometry.cocoaToAX(ax, primaryHeight: screens.primaryHeight)   // AX ⇄ Cocoa (self-inverse)
+    }
+
+    /// Push the current overlay state to the controller. `pulse` runs the border fade (real
+    /// focus switch); position-only follows (retile/resize/Space change) pass `pulse: false`.
+    func notifyFocusOverlay(pulse: Bool) { onFocusOverlayUpdate?(focusOverlayFrame(), pulse) }
 
     /// The window a focus recovery should land on, chosen deterministically: the frontmost
     /// app's AX-focused window if it's tiled on an active tree (what the user is really

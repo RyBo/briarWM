@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: StatusItemController?
     private var configWatcher: ConfigWatcher?
     private var permissionTimer: Timer?
+    private var overlay: FocusOverlayController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -48,6 +49,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let watcher = AppWatcher(manager: manager)
         watcher.start()
         self.watcher = watcher
+
+        let overlay = FocusOverlayController(style: config.focusIndicator)
+        manager.onFocusOverlayUpdate = { [weak overlay] frame, pulse in overlay?.update(frame: frame, pulse: pulse) }
+        manager.onConfigReloaded = { [weak overlay] cfg in overlay?.applyStyle(cfg.focusIndicator) }
+        self.overlay = overlay
 
         manager.start()
         statusItem = StatusItemController(manager: manager)
