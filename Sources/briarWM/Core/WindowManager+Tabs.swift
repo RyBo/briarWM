@@ -13,11 +13,16 @@ enum AdoptDecision: Equatable {
 }
 
 /// Pure tab-adoption decision. A window NOT stacked on an existing same-app tile
-/// (`frameMatch == nil`) is a standalone/first window → adopt. One that IS stacked is a native
-/// tab of that group: take over the leaf if this window is the app's front (focused) tab and the
-/// leaf isn't already claimed this pass; otherwise it's a background tab → ignore.
-func tabDecision(frameMatch: WinID?, isFront: Bool, leafAlreadyUsed: Bool) -> AdoptDecision {
+/// (`frameMatch == nil`) is a standalone/first window → adopt. A stacked window is a native
+/// tab of that group unless `bothOnscreen`: the candidate and the matched leaf both on-screen
+/// in the window server means two independent windows sharing a frame, since a settled tab
+/// group shows one member at a time. (A tab create/switch can briefly show both, so a real tab
+/// may be adopted for one pass; `dedupApp` collapses the stray leaf next pass once the old tab
+/// is off-screen.) Otherwise take over the leaf if this window is the app's front (focused)
+/// tab and the leaf isn't already claimed this pass; a background tab → ignore.
+func tabDecision(frameMatch: WinID?, isFront: Bool, leafAlreadyUsed: Bool, bothOnscreen: Bool) -> AdoptDecision {
     guard let leaf = frameMatch else { return .adopt }
+    if bothOnscreen { return .adopt }   // two independent windows stacked → tile the new one
     return (isFront && !leafAlreadyUsed) ? .rebind(leaf) : .ignore
 }
 
@@ -44,8 +49,10 @@ extension WindowManager {
     var manageTabs: Bool { config.layout.manageTabbedWindows }
 
     /// How close two windows' frames must be to count as "stacked" — i.e. native tabs of one
-    /// group, which share the exact same frame (0px). Kept tight so it tolerates rounding but
-    /// stays well below macOS's ~20px cascade offset for genuinely *separate* new windows.
+    /// group, which share the exact same frame (0px). Kept tight so it tolerates rounding. The
+    /// cascade offset is NOT a reliable separator (some apps, e.g. Ghostty, open new windows at
+    /// the previous window's exact frame); tabs vs. independent stacked windows are told apart
+    /// by window-server on-screen state (`bothOnscreen`), not by this tolerance.
     private static let tabStackTolerance: CGFloat = 10
 
     /// Adopt / rebind / skip every untracked tileable window of one app.
@@ -57,6 +64,11 @@ extension WindowManager {
     /// it's robust to apps the CGS path can't id.
     func reconcileApp(pid: pid_t, dirty: inout Set<SpaceID>) {
         guard let app = apps[pid] else { return }
+        // Self-populate the on-screen set when no batch pass holds one, so every caller —
+        // present or future — gets tab disambiguation without its own capture.
+        let ownsOnscreen = passOnscreen == nil
+        if ownsOnscreen { passOnscreen = WindowServerSnapshot.onscreenIDs() }
+        defer { if ownsOnscreen { passOnscreen = nil } }
         let focused = manageTabs ? app.focusedWindow() : nil
         var used: Set<WinID> = []
         for element in app.windows() where registry.id(for: element) == nil {
@@ -119,7 +131,9 @@ extension WindowManager {
                 registry.rebind(keep.id, to: f, pid: pid)
                 app.observe(window: f)
             }
+            let keepOnscreen = onscreen(keep.id)
             for c in cluster where c.id != keep.id {
+                if keepOnscreen && onscreen(c.id) { continue }   // both on-screen → independent, don't collapse
                 Log.logger.debug("tab dedup: drop stacked leaf \(c.id) (kept \(keep.id)) @ \(frameStr(c.frame))")
                 forget(c.id, tree: c.tree, newFocus: keep.id)
                 dirty.insert(c.tree.space)
@@ -135,7 +149,21 @@ extension WindowManager {
         let leaf = frameMatchLeaf(pid: pid, frame: window.frame)
         let isFront = focused.map { CFEqual($0, element) } ?? false
         let claimed = leaf.map { used.contains($0) } ?? false
-        return tabDecision(frameMatch: leaf, isFront: isFront, leafAlreadyUsed: claimed)
+        let independent = leaf.map { onscreen(element) && onscreen($0) } ?? false
+        return tabDecision(frameMatch: leaf, isFront: isFront, leafAlreadyUsed: claimed,
+                           bothOnscreen: independent)
+    }
+
+    /// Whether a window is confirmed on-screen this pass. Fails closed: no pass snapshot / no
+    /// window-server id → false, i.e. fall back to the frame-only tab heuristic.
+    private func onscreen(_ element: AXUIElement) -> Bool {
+        guard let onscreen = passOnscreen, let wid = spaces.cgWindowID(for: element) else { return false }
+        return onscreen.contains(wid)
+    }
+
+    private func onscreen(_ id: WinID) -> Bool {
+        guard let el = registry.window(for: id)?.element else { return false }
+        return onscreen(el)
     }
 
     /// The managed same-app leaf the given window is stacked on (a native tab joins its group at
@@ -153,6 +181,10 @@ extension WindowManager {
     /// promoted window is untracked and stacked on the vacated tile, return it so the leaf can
     /// rebind to it instead of collapsing. A normal single-window close has no such sibling → nil.
     func promotedTabSibling(forClosing id: WinID, pid: pid_t) -> AXUIElement? {
+        // No on-screen gate here: at front-tab-close the promoted tab is already on-screen, so the
+        // signal can't distinguish. When the signal was available, `classify` adopted independent
+        // windows into distinct leaves so they no longer share the vacated frame; in degraded mode
+        // this behaves exactly as before the gate existed.
         guard manageTabs, let app = apps[pid], let vacated = desiredFrames[id],
               let focused = app.focusedWindow(), registry.id(for: focused) == nil else { return nil }
         let w = AXWindow(element: focused, pid: pid)

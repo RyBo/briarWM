@@ -42,6 +42,11 @@ import Foundation
         #expect(!(try decode(#"{ "layout": { "reflow_on_minimize": false } }"#).layout.reflowOnMinimize))
     }
 
+    @Test func newWindowFollowsFocusDecodes() throws {
+        #expect(try decode("{}").layout.newWindowFollowsFocus)                                // default true
+        #expect(!(try decode(#"{ "layout": { "new_window_follows_focus": false } }"#).layout.newWindowFollowsFocus))
+    }
+
     @Test func focusIndicatorUsesDefaultsWhenOmitted() throws {
         let fi = try decode("{}").focusIndicator
         #expect(fi.enabled)

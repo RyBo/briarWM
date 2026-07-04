@@ -25,4 +25,8 @@ struct WindowServerSnapshot: Equatable {
         }
         return WindowServerSnapshot(windows: windows)
     }
+
+    /// Just the on-screen normal-layer window ids — nil when the list is unavailable, so
+    /// callers fail closed (treat "unknown" as "can't disambiguate", never as on-screen).
+    static func onscreenIDs() -> Set<CGWindowID>? { capture().map { Set($0.windows.keys) } }
 }

@@ -18,6 +18,11 @@ extension WindowManager {
             return
         }
         lastPollSnapshot = snapshot
+        // The snapshot's keys ARE the on-screen set — seed the pass with them so
+        // `reconcileSpaces` doesn't repeat the CG call. nil snapshot → let it capture.
+        let ownsOnscreen = passOnscreen == nil
+        if ownsOnscreen { passOnscreen = snapshot.map { Set($0.windows.keys) } }
+        defer { if ownsOnscreen { passOnscreen = nil } }
         reconcileSpaces()
     }
 
@@ -35,6 +40,11 @@ extension WindowManager {
         refreshActiveSpaces()                          // (1) keep activeSpace fresh
         passFrames = snapshotVisibleFrames()           // one AX read per window for the whole pass
         defer { passFrames = nil }
+        // One on-screen capture for the whole per-app loop + dedup — unless a caller
+        // (the poll's snapshot seed) already holds one.
+        let ownsOnscreen = passOnscreen == nil
+        if ownsOnscreen { passOnscreen = WindowServerSnapshot.onscreenIDs() }
+        defer { if ownsOnscreen { passOnscreen = nil } }
         var dirty: Set<SpaceID> = []
 
         // (2) Tab-aware discover/adopt/rebind/skip for every app: picks up windows whose
