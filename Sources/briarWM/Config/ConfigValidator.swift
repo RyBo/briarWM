@@ -28,6 +28,24 @@ enum ConfigValidator {
             out.append("layout.space_poll_interval: negative disables the backstop poll — use 0 to disable explicitly")
         }
 
+        let fi = config.focusIndicator
+        for (name, value) in [("focus_indicator.border_width", fi.borderWidth),
+                              ("focus_indicator.corner_radius", fi.cornerRadius),
+                              ("focus_indicator.glow", fi.glow)] where value < 0 {
+            out.append("\(name): \(value) is negative")
+        }
+        for (name, value) in [("focus_indicator.fade_in", fi.fadeIn),
+                              ("focus_indicator.hold", fi.hold),
+                              ("focus_indicator.fade_out", fi.fadeOut)] where value < 0 {
+            out.append("\(name): \(value) is negative")
+        }
+        if !(fi.opacity >= 0 && fi.opacity <= 1) {
+            out.append("focus_indicator.opacity: \(fi.opacity) is outside [0, 1]")
+        }
+        if !(fi.restOpacity >= 0 && fi.restOpacity <= 1) {
+            out.append("focus_indicator.rest_opacity: \(fi.restOpacity) is outside [0, 1]")
+        }
+
         out += bindingIssues(config.keybindings, context: "keybindings", config: config)
         for (name, binds) in config.modes.sorted(by: { $0.key < $1.key }) {
             out += bindingIssues(binds, context: "modes.\(name)", config: config)

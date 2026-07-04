@@ -124,6 +124,9 @@ extension WindowManager {
             registry.setFloating(fid, true)
             retile(tree)
         }
+        // The focused window is now a float (or newly tiled) — retile's internal notify only
+        // fires for windows in the retiled tree, so push the overlay update explicitly here.
+        notifyFocusOverlay(pulse: false)
     }
 
     func focusModeToggle() {
@@ -240,7 +243,9 @@ extension WindowManager {
         keymap = Keymap(config: config)
         currentMode = Keymap.defaultMode
         applyKeymap()
-        retileAll()
+        onConfigReloaded?(config)          // refresh the overlay's colors/metrics first…
+        retileAll()                        // …then retile, which repositions the halo
+        notifyFocusOverlay(pulse: false)   // reflect an enabled/disabled toggle immediately
         onConfigError?(nil)
         Log.logger.info("config reloaded")
     }

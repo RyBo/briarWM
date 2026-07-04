@@ -9,6 +9,21 @@ gaps:
   inner: 10           # between windows
   outer: 6            # screen margin
 
+# Visual focus cue: a soft glowing border that gives one quick bounce around the focused
+# window on each focus switch. Purely cosmetic — never moves windows or affects tiling.
+focus_indicator:
+  enabled: true
+  color: "#64D2FF"      # border accent — #RGB, #RRGGBB, or #RRGGBBAA (macOS systemTeal)
+  border_width: 1.5     # stroke width of the border
+  corner_radius: 6.0    # rounding of the border corners
+  fade_in: 0.14         # border rise time, seconds (smooth swell)
+  hold: 0.0             # peak plateau; 0 = swell straight into the fade
+  fade_out: 0.30        # border fall time, seconds (soft trailing fade)
+  opacity: 0.55         # peak opacity, 0–1 — lower is more subtle
+  rest_opacity: 0.0     # resting opacity between pulses, 0–1 — 0 = border only shows during
+                        # the pulse; >0 = a persistent border that pulses brighter on switch
+  glow: 5.0             # soft same-color feather in points (0 = a crisp hard line)
+
 layout:
   default_ratio: 0.5        # new split's share for the existing window (0–1)
   insert_at: after          # where a new window lands relative to the focused one
