@@ -55,6 +55,14 @@ final class WindowManager: AXEventSink {
     /// at the end of the pass). nil outside a pass: every other retile path (commands,
     /// drag snap-back) must read live frames or snap-back breaks.
     var passFrames: [WinID: CGRect]?
+    /// The on-screen window-server ids backing tab disambiguation: a settled native-tab group
+    /// shows one member at a time, while independent same-app windows that merely share a
+    /// frame (e.g. Ghostty opens new windows at the previous window's exact frame) are both
+    /// on-screen at once. `reconcileApp` self-populates this when it's nil; batch passes
+    /// (`reconcileSpaces`, the poll's snapshot seed) hold one capture around their whole loop
+    /// instead. nil (window list unavailable) → tab decisions degrade to frame-only, the old
+    /// behavior.
+    var passOnscreen: Set<CGWindowID>?
     /// The window-server fingerprint from the last poll tick — `pollReconcile()` skips
     /// the full sweep when it hasn't changed.
     var lastPollSnapshot: WindowServerSnapshot?
