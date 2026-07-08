@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// How a split divides its space.
-enum Orientation: String, Equatable {
+enum Orientation: String, Equatable, Codable {
     /// Children sit side-by-side; the split divides WIDTH (x-axis).
     case horizontal
     /// Children stack top/bottom; the split divides HEIGHT (y-axis).

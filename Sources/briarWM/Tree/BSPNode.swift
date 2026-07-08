@@ -87,6 +87,25 @@ extension BSPNode {
         }
     }
 
+    /// Deep copy of this subtree containing only leaves where `keep` is true;
+    /// single-child splits collapse to the surviving child. nil if no leaf survives.
+    func pruned(keeping keep: (WinID) -> Bool) -> BSPNode? {
+        switch kind {
+        case .leaf(let id):
+            return keep(id) ? BSPNode(leaf: id) : nil
+        case .split(let o, let r, let a, let b):
+            let na = a.pruned(keeping: keep)
+            let nb = b.pruned(keeping: keep)
+            switch (na, nb) {
+            // `init(split:)` wires `parent` on both children — remove/resize/replace need it.
+            case let (x?, y?): return BSPNode(split: o, ratio: r, first: x, second: y)
+            case let (x?, nil): return x    // sole survivor collapses into the split's slot
+            case let (nil, y?): return y
+            case (nil, nil): return nil
+            }
+        }
+    }
+
     /// ASCII rendering for the debug "dump tree" action.
     func describe(indent: Int = 0) -> String {
         let pad = String(repeating: "  ", count: indent)
