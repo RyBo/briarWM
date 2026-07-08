@@ -86,3 +86,5 @@ first principles. Don't paste source from those projects.
 
 - Config: `~/.config/briarWM/config.yaml` (hot-reloads on save). Template: `config.example.yaml`.
 - Logs: `~/.local/state/briarWM/briarWM.log` (`tail -f` while iterating).
+- Layout state: `~/.local/state/briarWM/layout.json` — debounced snapshot of every tree,
+  restored on the next same-session startup by CGWindowID match (stale after reboot).

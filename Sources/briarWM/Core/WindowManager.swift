@@ -66,6 +66,9 @@ final class WindowManager: AXEventSink {
     /// The window-server fingerprint from the last poll tick — `pollReconcile()` skips
     /// the full sweep when it hasn't changed.
     var lastPollSnapshot: WindowServerSnapshot?
+    /// Trailing-debounce timer for layout persistence (see WindowManager+Persistence). Coalesces
+    /// a reflow's retile storm into one disk write; `internal` so the extension can drive it.
+    var layoutSaveTimer: Timer?
 
     var keymap: Keymap
     var currentMode = Keymap.defaultMode
@@ -115,6 +118,7 @@ final class WindowManager: AXEventSink {
         for d in screens.displayIDs { ensureTree(space: activeSpace[d] ?? pseudoSpace(d), display: d) }
         applyKeymap()
         adoptExistingWindows()
+        restoreLayout()
         retileAll()
         let tiled = trees.values.reduce(0) { $0 + $1.windowIDs.count }
         Log.logger.info("briarWM started: \(tiled) tiled, \(registry.floating.count) floating, \(screens.displayIDs.count) display(s), \(trees.count) desktop tree(s)")
@@ -270,6 +274,16 @@ final class WindowManager: AXEventSink {
     /// own extra cleanup (registry unregister, minimize park, re-insert elsewhere) on top.
     func detach(_ id: WinID, from tree: BSPTree, newFocus: WinID? = nil) {
         tree.remove(id)
+        clearSlotBookkeeping(id, from: tree, newFocus: newFocus)
+    }
+
+    /// Drop the per-window tiling bookkeeping tied to `id`'s slot — desired frame, sticky
+    /// observation, zoom — repointing focus to `tree`'s remembered window (or `newFocus`)
+    /// when `id` was the focused one. Everything `detach` does EXCEPT removing the leaf, so a
+    /// batch re-home can prune many windows from a tree in one pass (`removeAll`) and still
+    /// shed each one's bookkeeping identically. Call after the removal — it reads the already
+    /// repaired `tree.focused`.
+    func clearSlotBookkeeping(_ id: WinID, from tree: BSPTree, newFocus: WinID? = nil) {
         desiredFrames.removeValue(forKey: id)
         stickyOnce.remove(id)
         if zoomedID == id { zoomedID = nil }
@@ -353,6 +367,7 @@ final class WindowManager: AXEventSink {
     /// a destination desktop after a move. This is the core per-Space invariant: AX
     /// `setFrame` never touches windows on a hidden desktop.
     func retile(_ tree: BSPTree, force: Bool = false) {
+        scheduleLayoutSave()   // BEFORE the guard: parked-tree mutations must still schedule a save
         guard let screen = screens.screen(for: tree.display) else { return }
         let area = screens.tilingAreaAX(for: screen, outerGap: config.gaps.outer)
         var frames = LayoutEngine.computeFrames(root: tree.root, area: area, innerGap: config.gaps.inner)

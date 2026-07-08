@@ -93,7 +93,12 @@ extension WindowManager {
     /// Re-home each tiled window whose real Space drifted from its tree (float one seen spanning
     /// every desktop twice running), marking both source and destination Spaces dirty.
     private func rehomeDriftedWindows(_ spaceDisplay: [SpaceID: DisplayID], dirty: inout Set<SpaceID>) {
-        for tree in Array(trees.values) {                 // snapshot: we mutate `trees`
+        // Phase 1: scan without re-homing. Float sticky windows inline (a single-window op),
+        // but only *record* genuine drifts, grouped by (source tree, destination Space). The
+        // grouping is computed against this stable snapshot of `trees` because phase 2's
+        // `ensureTree` can add entries — a group must reflect the pre-move layout.
+        var pending: [ObjectIdentifier: (src: BSPTree, dests: [SpaceID: Set<WinID>])] = [:]
+        for tree in Array(trees.values) {                 // snapshot: phase 2 mutates `trees`
             for id in tree.windowIDs where !registry.isFloating(id) {
                 guard let element = registry.window(for: id)?.element,
                       let wid = spaces.cgWindowID(for: element) else { continue }
@@ -110,13 +115,24 @@ extension WindowManager {
                 // If this fires every tick for windows you never moved, the window-server's
                 // window→Space numbering disagrees with the managed-space dict key — see
                 // SpacesManager.spaceID(from:) and switch the preferred key.
-                Log.logger.debug("reconcile: \(id) moved space \(tree.space) → \(real)")
-                let dst = ensureTree(space: real, display: spaceDisplay[real] ?? tree.display)
-                detach(id, from: tree)
-                dst.insert(id, focusedFrame: insertionHint(for: dst),
-                           autoSplit: autoSplit, ratio: config.layout.defaultRatio)
-                dirty.insert(tree.space)
-                dirty.insert(real)
+                pending[ObjectIdentifier(tree), default: (tree, [:])].dests[real, default: []].insert(id)
+            }
+        }
+
+        // Phase 2: move each group as one intact subtree, so a whole desktop migrated at once
+        // (lid close/open) keeps its arrangement instead of being re-inserted window-by-window.
+        // A one-leaf group behaves exactly like the old single-window insert (via insertSubtree).
+        for (src, dests) in pending.values {
+            for (dstSpace, moved) in dests {
+                guard let subtree = src.root?.pruned(keeping: { moved.contains($0) }) else { continue }
+                src.removeAll(moved)
+                for id in moved { clearSlotBookkeeping(id, from: src) }
+                let dst = ensureTree(space: dstSpace, display: spaceDisplay[dstSpace] ?? src.display)
+                dst.insertSubtree(subtree, focusedFrame: insertionHint(for: dst),
+                                  autoSplit: autoSplit, ratio: config.layout.defaultRatio)
+                dirty.insert(src.space)
+                dirty.insert(dstSpace)
+                Log.logger.debug("reconcile: moved \(moved.count) window(s) space \(src.space) → \(dstSpace) as intact subtree")
             }
         }
     }
@@ -251,10 +267,8 @@ extension WindowManager {
         guard !tree.isEmpty else { return }
         tree.display = display
         if let existing = trees[tree.space], existing !== tree {
-            for id in tree.windowIDs {
-                existing.insert(id, focusedFrame: nil, autoSplit: autoSplit,
-                                ratio: config.layout.defaultRatio)
-            }
+            existing.insertSubtree(tree.root!, focusedFrame: nil, autoSplit: autoSplit,
+                                   ratio: config.layout.defaultRatio)
         } else {
             trees[tree.space] = tree
         }
