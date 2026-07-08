@@ -27,6 +27,13 @@ final class ScreenManager {
     var displayIDs: [DisplayID] { screens.map(\.displayID) }
     func screen(for id: DisplayID) -> ScreenInfo? { screens.first { $0.displayID == id } }
 
+    /// True when at least one enumerated display is powered on. While every display sleeps
+    /// (lid closed, no external), AX liveness and CGS Space queries read garbage for windows
+    /// that are perfectly fine — reconciliation must not trust them until this is true again.
+    var anyDisplayAwake: Bool {
+        screens.contains { CGDisplayIsAsleep($0.displayID) == 0 }
+    }
+
     /// Tiling rectangle for a screen in AX coordinates, inset by the outer gap.
     func tilingAreaAX(for screen: ScreenInfo, outerGap: CGFloat) -> CGRect {
         Geometry.cocoaToAX(screen.visibleFrame, primaryHeight: primaryHeight)

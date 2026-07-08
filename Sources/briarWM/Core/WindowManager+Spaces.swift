@@ -12,6 +12,13 @@ extension WindowManager {
     /// app activation, display reconfig, wake) call `reconcileSpaces` directly and never
     /// skip.
     func pollReconcile() {
+        // Self-heal path for the sleep suspension: if every wake notification was missed,
+        // the first tick with a lit display resumes reconciliation.
+        if reconcileSuspended {
+            guard screens.anyDisplayAwake else { return }
+            reconcileSuspended = false
+            Log.logger.info("displays awake — reconcile resumed (poll)")
+        }
         let snapshot = WindowServerSnapshot.capture()
         if let snapshot, snapshot == lastPollSnapshot {
             Log.logger.trace("poll: window server unchanged — skip reconcile")
@@ -37,6 +44,7 @@ extension WindowManager {
     /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
     /// steals OS keyboard focus out from under the user.
     func reconcileSpaces(moveFocus: Bool = false) {
+        guard !reconcileSuspended else { return }      // displays asleep: every signal is garbage
         refreshActiveSpaces()                          // (1) keep activeSpace fresh
         passFrames = snapshotVisibleFrames()           // one AX read per window for the whole pass
         defer { passFrames = nil }
@@ -84,7 +92,7 @@ extension WindowManager {
     private func repointTreesToOwningDisplay(_ spaceDisplay: [SpaceID: DisplayID], dirty: inout Set<SpaceID>) {
         for tree in trees.values {
             guard let d = spaceDisplay[tree.space], d != tree.display else { continue }
-            Log.logger.debug("re-point tree space \(tree.space): display \(tree.display) → \(d)")
+            Log.logger.info("re-point tree space \(tree.space): display \(tree.display) → \(d)")
             tree.display = d
             dirty.insert(tree.space)
         }
@@ -105,6 +113,7 @@ extension WindowManager {
                 let ids = spaces.spaceIDs(for: wid)
                 if ids.count > 1 {                        // sticky twice in a row → float it
                     guard stickyOnce.contains(id) else { stickyOnce.insert(id); continue }
+                    Log.logger.info("float sticky window \(id) (spans \(ids.count) spaces twice running)")
                     detach(id, from: tree)
                     registry.setFloating(id, true)
                     dirty.insert(tree.space)
@@ -132,7 +141,7 @@ extension WindowManager {
                                   autoSplit: autoSplit, ratio: config.layout.defaultRatio)
                 dirty.insert(src.space)
                 dirty.insert(dstSpace)
-                Log.logger.debug("reconcile: moved \(moved.count) window(s) space \(src.space) → \(dstSpace) as intact subtree")
+                Log.logger.info("reconcile: moved \(moved.count) window(s) space \(src.space) → \(dstSpace) as intact subtree")
             }
         }
     }
@@ -197,19 +206,33 @@ extension WindowManager {
     /// `kAXUIElementDestroyed` (notably Firefox). Returns the Spaces that need a retile. Never
     /// reaps a merely hidden / off-Space / occluded window (their elements still answer AX).
     private func reapDeadWindows() -> Set<SpaceID> {
-        var dirty: Set<SpaceID> = []
-        for tree in Array(trees.values) {                 // snapshot: we mutate tree contents
+        var scanned = 0
+        var dead: [(tree: BSPTree, id: WinID)] = []
+        for tree in Array(trees.values) + parkedTrees {   // parked trees leak too if dead-but-registered
             for id in tree.windowIDs where !registry.isFloating(id) {
+                scanned += 1
                 guard let w = registry.window(for: id), isDead(w) else { continue }
-                Log.logger.debug("reap dead window \(id)")
-                forget(id, tree: tree)
-                dirty.insert(tree.space)
+                dead.append((tree, id))
             }
         }
-        for tree in parkedTrees {                          // parked trees leak too if dead-but-registered
-            for id in tree.windowIDs where !registry.isFloating(id) {
-                if let w = registry.window(for: id), isDead(w) { forget(id, tree: tree) }
-            }
+
+        // Circuit breaker: most-of-everything reading dead at once is a display-sleep /
+        // window-server transition, not real (Cmd-Q cleanup arrives via removeApp, never
+        // here). Believe it only when the exact same set reads dead on the next pass too —
+        // a real mass close survives the retry, a transition clears within one tick.
+        let deadIDs = Set(dead.map(\.id))
+        if dead.count >= 2, dead.count * 2 > scanned, deadIDs != pendingMassReap {
+            pendingMassReap = deadIDs
+            Log.logger.info("reap deferred: \(dead.count)/\(scanned) windows read dead at once")
+            return []
+        }
+        pendingMassReap = []
+
+        var dirty: Set<SpaceID> = []
+        for (tree, id) in dead {
+            Log.logger.info("reap dead window \(id)")
+            forget(id, tree: tree)
+            if trees[tree.space] === tree { dirty.insert(tree.space) }   // parked: recompute only
         }
         return dirty
     }
@@ -237,7 +260,7 @@ extension WindowManager {
         for (space, tree) in orphaned {
             trees.removeValue(forKey: space)
             parkedTrees.append(tree)
-            Log.logger.debug("park tree space \(space) (display \(tree.display) gone)")
+            Log.logger.info("park tree space \(space) (display \(tree.display) gone)")
         }
 
         // Restore parked trees whose display is back (keyed by Space, stable across reconnect).
@@ -272,6 +295,6 @@ extension WindowManager {
         } else {
             trees[tree.space] = tree
         }
-        Log.logger.debug("restore tree space \(tree.space) onto display \(display)")
+        Log.logger.info("restore tree space \(tree.space) onto display \(display)")
     }
 }

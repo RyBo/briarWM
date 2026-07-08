@@ -134,7 +134,7 @@ extension WindowManager {
             let keepOnscreen = onscreen(keep.id)
             for c in cluster where c.id != keep.id {
                 if keepOnscreen && onscreen(c.id) { continue }   // both on-screen → independent, don't collapse
-                Log.logger.debug("tab dedup: drop stacked leaf \(c.id) (kept \(keep.id)) @ \(frameStr(c.frame))")
+                Log.logger.info("tab dedup: drop stacked leaf \(c.id) (kept \(keep.id)) @ \(frameStr(c.frame))")
                 forget(c.id, tree: c.tree, newFocus: keep.id)
                 dirty.insert(c.tree.space)
             }
