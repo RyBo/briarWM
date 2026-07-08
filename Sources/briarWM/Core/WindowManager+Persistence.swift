@@ -39,22 +39,28 @@ extension WindowManager {
         }
         var snapshots: [TreeSnapshot] = []
         for tree in Array(trees.values) + parkedTrees {
+            // A desktop still awaiting its pending restore is saved as the queued shape, not
+            // the live tree — a restart before the user ever visits it must not flatten it.
+            guard pendingRestore[tree.space] == nil else { continue }
             guard let root = tree.root, let encoded = TreeSnapshotCodec.encode(root, id: winToCG) else { continue }
             snapshots.append(TreeSnapshot(space: tree.space, display: tree.display,
                                           focused: tree.focused.flatMap(winToCG),
                                           layoutPreset: tree.layoutPreset?.rawValue,
                                           root: encoded))
         }
+        snapshots.append(contentsOf: pendingRestore.values)
         guard !snapshots.isEmpty else { return }
         LayoutStore.save(LayoutSnapshot(savedAt: Date(), bootTime: bootTime, trees: snapshots))
     }
 
     // MARK: - Restore
 
-    /// Restore the on-disk layout onto the freshly-adopted trees. Called once from `start()`
-    /// between `adoptExistingWindows()` and `retileAll()`. Rearranges only windows that are
-    /// *already* tiled — it never resurrects closed windows or parked trees — so a window's
-    /// live Space always wins over the snapshot's.
+    /// Load the on-disk layout and queue every desktop's shape as a pending restore. Called
+    /// once from `start()` between `adoptExistingWindows()` and `retileAll()`. The visible
+    /// desktops apply immediately; hidden ones can't (CGS reports nothing for off-screen
+    /// windows, so their windows sit in a pseudo-Space tree until first discovered) — their
+    /// shapes stay queued and `applyPendingRestores` re-applies them from the reconcile pass
+    /// as windows surface, finalizing when the desktop is first seen.
     func restoreLayout() {
         guard spaces.canIdentifyWindows else { return }
         guard let snap = LayoutStore.load() else { return }
@@ -68,25 +74,41 @@ extension WindowManager {
             return
         }
 
-        // window-server id → live WinID, over every window currently tiled.
-        var cgToWin: [WindowServerID: WinID] = [:]
-        for tree in trees.values {
-            for id in tree.windowIDs {
+        for ts in snap.trees where ts.root != nil { pendingRestore[ts.space] = ts }
+        pendingRestoreExpiry = Date().addingTimeInterval(600)
+        var dirty: Set<SpaceID> = []
+        applyPendingRestores(dirty: &dirty)   // start() retiles everything right after
+        if !pendingRestore.isEmpty {
+            Log.logger.info("layout restore: \(pendingRestore.count) desktop(s) deferred until their windows surface")
+        }
+    }
+
+    /// Apply queued desktop shapes to their live trees. Rearranges only windows already tiled
+    /// in that Space's tree — it never resurrects closed windows or parked trees, so a
+    /// window's live Space always wins over the snapshot's. A desktop keeps re-applying as
+    /// more of its windows are discovered (invisible while hidden), and its entry is dropped
+    /// on the first pass where the desktop is user-visible — after that the user's own
+    /// rearrangements are never overwritten. Entries expire ten minutes after startup.
+    func applyPendingRestores(dirty: inout Set<SpaceID>) {
+        guard !pendingRestore.isEmpty else { return }
+        if let expiry = pendingRestoreExpiry, Date() > expiry {
+            Log.logger.info("layout restore: dropping \(pendingRestore.count) never-seen desktop(s) (expired)")
+            pendingRestore.removeAll()
+            return
+        }
+        let visible = Set(activeSpace.values)
+        for (space, ts) in Array(pendingRestore) {
+            guard let t = trees[space], !t.isEmpty, let snapRoot = ts.root else { continue }
+
+            // window-server id → live WinID, over this tree's members only: the snapshot
+            // merely rearranges within the desktop.
+            var cgToWin: [WindowServerID: WinID] = [:]
+            for id in t.windowIDs {
                 guard let element = registry.window(for: id)?.element,
                       let cg = spaces.cgWindowID(for: element) else { continue }
                 cgToWin[cg] = id
             }
-        }
-
-        var restoredWindows = 0
-        var restoredTrees = 0
-        for ts in snap.trees {
-            guard let t = trees[ts.space], let snapRoot = ts.root else { continue }
-            // Only place a window that lives in *this* tree right now: its live Space wins,
-            // the snapshot merely rearranges within it.
-            let resolve: (WindowServerID) -> WinID? = { cg in
-                cgToWin[cg].flatMap { t.contains($0) ? $0 : nil }
-            }
+            let resolve: (WindowServerID) -> WinID? = { cgToWin[$0] }
             guard let newRoot = TreeSnapshotCodec.rebuild(snapRoot, resolve: resolve) else { continue }
 
             // Windows in the tree today that the snapshot didn't place (opened before restore,
@@ -104,10 +126,12 @@ extension WindowManager {
             }
             // Restore focus last — `insert` above moves `focused` onto each leftover.
             t.focused = ts.focused.flatMap(resolve) ?? t.root?.leftmostLeaf().windowID
+            dirty.insert(space)
 
-            restoredWindows += placed.count
-            restoredTrees += 1
+            if visible.contains(space) {
+                pendingRestore.removeValue(forKey: space)
+                Log.logger.info("layout restore: placed \(placed.count) window(s) on desktop \(space)")
+            }
         }
-        Log.logger.info("layout restore: placed \(restoredWindows) window(s) across \(restoredTrees) desktop(s)")
     }
 }

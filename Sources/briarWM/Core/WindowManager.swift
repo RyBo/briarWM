@@ -78,6 +78,12 @@ final class WindowManager: AXEventSink {
     /// The window set a mass-reap was deferred for (see `reapDeadWindows`): everything reading
     /// dead at once is a transition artifact, so it's only believed on the second consecutive pass.
     var pendingMassReap: Set<WinID> = []
+    /// Saved desktop shapes not yet applied (see WindowManager+Persistence): a hidden desktop's
+    /// windows can't be resolved to their Space at startup, so its restore waits here until the
+    /// reconcile pass surfaces them. Keyed by Space; entries drop when the desktop is first
+    /// user-visible or at `pendingRestoreExpiry`.
+    var pendingRestore: [SpaceID: TreeSnapshot] = [:]
+    var pendingRestoreExpiry: Date?
 
     var keymap: Keymap
     var currentMode = Keymap.defaultMode

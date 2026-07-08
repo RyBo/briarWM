@@ -82,6 +82,7 @@ extension WindowManager {
         // a briarWM restart.
         repointTreesToOwningDisplay(spaceDisplay, dirty: &dirty)
         rehomeDriftedWindows(spaceDisplay, dirty: &dirty)
+        applyPendingRestores(dirty: &dirty)    // rebuild desktops whose windows just surfaced
 
         retileDirtyAndVisible(dirty)
         repairFocusCache(moveFocus: moveFocus)
