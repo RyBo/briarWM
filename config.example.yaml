@@ -1,8 +1,9 @@
 # briarWM configuration — ~/.config/briarWM/config.yaml
-# Reloads automatically on save (also: $mod+Shift+c).
+# Reloads automatically on save (also: mod+shift+c).
 
-# $mod modifier: alt (recommended) | cmd | ctrl | shift | hyper
-# Alt = i3's default. Note: bound Alt combos won't type special characters.
+# What `mod` (or `$mod`) means in the keybindings below: alt (recommended) | cmd |
+# ctrl | shift | hyper. Alt = i3's default. Change it here and every mod+ binding
+# follows. Note: bound Alt combos won't type special characters.
 modifier: alt
 
 gaps:
@@ -18,9 +19,9 @@ focus_indicator:
   corner_radius: 6.0    # rounding of the border corners
   fade_in: 0.14         # border rise time, seconds (smooth swell)
   hold: 0.0             # peak plateau; 0 = swell straight into the fade
-  fade_out: 0.30        # border fall time, seconds (soft trailing fade)
-  opacity: 0.55         # peak opacity, 0–1 — lower is more subtle
-  rest_opacity: 0.0     # resting opacity between pulses, 0–1 — 0 = border only shows during
+  fade_out: 0.20        # border fall time, seconds (soft trailing fade)
+  opacity: 0.60         # peak opacity, 0–1 — lower is more subtle
+  rest_opacity: 0.3     # resting opacity between pulses, 0–1 — 0 = border only shows during
                         # the pulse; >0 = a persistent border that pulses brighter on switch
   glow: 5.0             # soft same-color feather in points (0 = a crisp hard line)
 
@@ -51,80 +52,80 @@ exec:
 
 keybindings:
   # focus (vim h/j/k/l + arrows)
-  "alt+h": "focus left"
-  "alt+j": "focus down"
-  "alt+k": "focus up"
-  "alt+l": "focus right"
-  "alt+left": "focus left"
-  "alt+down": "focus down"
-  "alt+up": "focus up"
-  "alt+right": "focus right"
+  "mod+h": "focus left"
+  "mod+j": "focus down"
+  "mod+k": "focus up"
+  "mod+l": "focus right"
+  "mod+left": "focus left"
+  "mod+down": "focus down"
+  "mod+up": "focus up"
+  "mod+right": "focus right"
 
   # move / swap window
-  "alt+shift+h": "move left"
-  "alt+shift+j": "move down"
-  "alt+shift+k": "move up"
-  "alt+shift+l": "move right"
+  "mod+shift+h": "move left"
+  "mod+shift+j": "move down"
+  "mod+shift+k": "move up"
+  "mod+shift+l": "move right"
 
   # split preselection (bspwm-style) for the next window
-  "alt+ctrl+h": "preselect horizontal"
-  "alt+ctrl+v": "preselect vertical"
-  "alt+e": "toggle split"
+  "mod+ctrl+h": "preselect horizontal"
+  "mod+ctrl+v": "preselect vertical"
+  "mod+e": "toggle split"
 
   # snap the whole desktop to the next preset layout (tmux Ctrl-b Space style);
   # order & main-pane width come from layout.preset_cycle / layout.main_ratio above
-  "alt+t": "cycle layout"
+  "mod+t": "cycle layout"
   # or jump straight to one preset:
-  # "alt+ctrl+t": "layout tiled"
-  # "alt+ctrl+m": "layout main-vertical"
+  # "mod+ctrl+t": "layout tiled"
+  # "mod+ctrl+m": "layout main-vertical"
 
   # sizing — expands the focused window toward the named direction
   # (or shrinks it if that side is flush against the screen edge)
-  "alt+ctrl+left": "resize left 40"
-  "alt+ctrl+right": "resize right 40"
-  "alt+ctrl+up": "resize up 40"
-  "alt+ctrl+down": "resize down 40"
-  "alt+shift+e": "balance"
-  "alt+r": "mode resize"
+  "mod+ctrl+left": "resize left 40"
+  "mod+ctrl+right": "resize right 40"
+  "mod+ctrl+up": "resize up 40"
+  "mod+ctrl+down": "resize down 40"
+  "mod+shift+e": "balance"
+  "mod+r": "mode resize"
 
   # window / layout
-  "alt+f": "fullscreen"
-  "alt+shift+space": "toggle float"
-  "alt+space": "focus mode toggle"
-  "alt+shift+q": "close"
+  "mod+f": "fullscreen"
+  "mod+shift+space": "toggle float"
+  "mod+space": "focus mode toggle"
+  "mod+shift+q": "close"
 
   # desktops (macOS Spaces): switch to N, or send the focused window to N.
   # N is 1-based, left → right, among the user desktops of the focused display.
-  "alt+1": "workspace 1"
-  "alt+2": "workspace 2"
-  "alt+3": "workspace 3"
-  "alt+4": "workspace 4"
-  "alt+5": "workspace 5"
-  "alt+shift+1": "move workspace 1"
-  "alt+shift+2": "move workspace 2"
-  "alt+shift+3": "move workspace 3"
-  "alt+shift+4": "move workspace 4"
-  "alt+shift+5": "move workspace 5"
+  "mod+1": "workspace 1"
+  "mod+2": "workspace 2"
+  "mod+3": "workspace 3"
+  "mod+4": "workspace 4"
+  "mod+5": "workspace 5"
+  "mod+shift+1": "move workspace 1"
+  "mod+shift+2": "move workspace 2"
+  "mod+shift+3": "move workspace 3"
+  "mod+shift+4": "move workspace 4"
+  "mod+shift+5": "move workspace 5"
   # relative switching, and i3's back_and_forth (bounce to the previous desktop):
-  # "alt+rightbracket": "workspace next"
-  # "alt+leftbracket": "workspace prev"
-  # "alt+tab": "workspace back_and_forth"
+  # "mod+rightbracket": "workspace next"
+  # "mod+leftbracket": "workspace prev"
+  # "mod+tab": "workspace back_and_forth"
 
   # runtime gaps tweaks (live until `gaps reset` or a config reload):
-  # "alt+equal": "gaps inner +2"
-  # "alt+minus": "gaps inner -2"
-  # "alt+shift+g": "gaps reset"
+  # "mod+equal": "gaps inner +2"
+  # "mod+minus": "gaps inner -2"
+  # "mod+shift+g": "gaps reset"
 
   # launching
-  "alt+return": "exec terminal"
-  "alt+d": "exec launcher"
+  "mod+return": "exec terminal"
+  "mod+d": "exec launcher"
 
   # briarWM control
-  "alt+shift+c": "reload"
-  "alt+shift+r": "restart"
-  "alt+shift+t": "dump tree"   # logs the focused display's tree
+  "mod+shift+c": "reload"
+  "mod+shift+r": "restart"
+  "mod+shift+t": "dump tree"   # logs the focused display's tree
 
-# Modal resize mode: alt+r enters; h/j/k/l expand the window toward that side; escape/return exits.
+# Modal resize mode: mod+r enters; h/j/k/l expand the window toward that side; escape/return exits.
 modes:
   resize:
     "h": "resize left 40"
