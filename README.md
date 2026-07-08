@@ -19,6 +19,12 @@ unavailable, briarWM falls back to one tree per display.
 - Multi-monitor. One tree per display and desktop.
 - Resize (direct and a modal mode), balance, toggle split orientation, zoom to fill the
   tiling area, floating windows, per-app float rules, and live gaps tweaks.
+- Preset layouts. `cycle layout` snaps the desktop through even/main/tiled presets,
+  tmux `Ctrl-b Space` style.
+- Focus indicator. A glowing border pulses around the window that takes focus
+  (configurable color, opacity, and fade; off with one line).
+- Native tabs stay one tile. A tab group (Ghostty, Safari, Terminal) tiles as a single
+  pane that follows the front tab.
 - Minimize reflow. Minimizing fills the slot and restores it on un-minimize.
 - YAML config with hot reload. A valid config applies on save. A broken one keeps your
   current settings and flags the error in the menu bar.
@@ -59,7 +65,7 @@ optional and falls back to a default. See [`config.example.yaml`](config.example
 for the full reference. A small taste:
 
 ```yaml
-modifier: alt            # $mod: alt | cmd | ctrl | shift | hyper
+modifier: alt            # what `mod` means: alt | cmd | ctrl | shift | hyper
 
 gaps:
   inner: 10              # between windows
@@ -70,43 +76,48 @@ layout:
   auto_split: longer_edge
 
 keybindings:
-  "alt+h": "focus left"
-  "alt+shift+h": "move left"
-  "alt+e": "toggle split"
-  "alt+f": "fullscreen"
-  "alt+shift+space": "toggle float"
-  "alt+1": "workspace 1"
-  "alt+shift+1": "move workspace 1"
-  "alt+return": "exec terminal"
+  "mod+h": "focus left"
+  "mod+shift+h": "move left"
+  "mod+e": "toggle split"
+  "mod+f": "fullscreen"
+  "mod+shift+space": "toggle float"
+  "mod+1": "workspace 1"
+  "mod+shift+1": "move workspace 1"
+  "mod+return": "exec terminal"
 
 floating:
   bundle_ids:
     - com.apple.systempreferences
 ```
 
+`mod` (or i3's `$mod`) in a binding expands to whatever `modifier:` says, so switching
+to `cmd` is a one-line change. Spelling the modifier out (`"alt+h"`) works too.
+
 `make check` validates more than YAML syntax. It fails on unknown modifier names, bad
 `insert_at` / `auto_split` / `preset_cycle` values, bindings whose key or action doesn't
 parse, `mode` actions that reference undefined modes, and regexes that don't compile.
 
-### Default keybindings (`$mod` = Alt/Option)
+### Default keybindings (`mod` = Alt/Option)
 
 | Action | Keys |
 |---|---|
-| focus left/down/up/right | `alt+h/j/k/l` (or arrows) |
-| move/swap window | `alt+shift+h/j/k/l` |
-| preselect split horizontal / vertical | `alt+ctrl+h` / `alt+ctrl+v` |
-| toggle split orientation | `alt+e` |
-| resize (direct) | `alt+ctrl+arrows` (expand toward the arrow, shrink if flush to that edge) |
-| resize mode (modal) | `alt+r`, then `h/j/k/l`, `escape` to exit |
-| balance ratios | `alt+shift+e` |
-| fullscreen (zoom) | `alt+f` |
-| toggle floating | `alt+shift+space` |
-| close window | `alt+shift+q` |
-| switch to desktop 1-5 | `alt+1` ... `alt+5` |
-| move window to desktop 1-5 | `alt+shift+1` ... `alt+shift+5` |
-| terminal / launcher | `alt+return` / `alt+d` |
-| reload / restart config | `alt+shift+c` / `alt+shift+r` |
-| dump tree to log | `alt+shift+t` |
+| focus left/down/up/right | `mod+h/j/k/l` (or arrows) |
+| move/swap window | `mod+shift+h/j/k/l` |
+| preselect split horizontal / vertical | `mod+ctrl+h` / `mod+ctrl+v` |
+| toggle split orientation | `mod+e` |
+| cycle preset layouts | `mod+t` (order set by `layout.preset_cycle`) |
+| resize (direct) | `mod+ctrl+arrows` (expand toward the arrow, shrink if flush to that edge) |
+| resize mode (modal) | `mod+r`, then `h/j/k/l`, `escape` to exit |
+| balance ratios | `mod+shift+e` |
+| fullscreen (zoom) | `mod+f` |
+| toggle floating | `mod+shift+space` |
+| focus tiled ↔ floating | `mod+space` |
+| close window | `mod+shift+q` |
+| switch to desktop 1-5 | `mod+1` ... `mod+5` |
+| move window to desktop 1-5 | `mod+shift+1` ... `mod+shift+5` |
+| terminal / launcher | `mod+return` / `mod+d` |
+| reload / restart config | `mod+shift+c` / `mod+shift+r` |
+| dump tree to log | `mod+shift+t` |
 
 Desktop numbers are 1-based, left to right, among the user desktops of the focused
 display. You can still switch with `Ctrl+left/right`; briarWM reconciles either way.
