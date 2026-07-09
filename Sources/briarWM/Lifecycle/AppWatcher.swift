@@ -48,6 +48,15 @@ final class AppWatcher {
             self?.manager.screensChanged()
         })
 
+        // Display/system sleep: between lid close and actual sleep the poll can still fire,
+        // and every liveness signal (AX exists, CGS window id, Space membership) reads "gone"
+        // for windows that are fine — suspend the reconcile gate until a wake path settles it.
+        let sleep: (Notification) -> Void = { [weak self] _ in self?.manager.displaysWillSleep() }
+        tokens.append(ws.addObserver(forName: NSWorkspace.screensDidSleepNotification,
+                                     object: nil, queue: .main, using: sleep))
+        tokens.append(ws.addObserver(forName: NSWorkspace.willSleepNotification,
+                                     object: nil, queue: .main, using: sleep))
+
         // Returning from sleep or screen unlock fires neither a reliable Space-change nor
         // an app-activation notification, and while locked the active Space is the
         // loginwindow Space — so force a full re-sync to restore tiling on wake/unlock.

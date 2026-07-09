@@ -66,9 +66,24 @@ final class BSPTree {
                 insertAt: InsertAt = .after,
                 autoSplit: AutoSplit = .longerEdge,
                 ratio: Double = 0.5) {
+        // A single leaf is just the degenerate subtree; `insertSubtree` sets `focused`
+        // to the subtree's leftmost leaf, which for one leaf is `win` — same as before.
+        insertSubtree(BSPNode(leaf: win), focusedFrame: focusedFrame,
+                      insertAt: insertAt, autoSplit: autoSplit, ratio: ratio)
+    }
+
+    /// Insert a prebuilt subtree by splitting the focused leaf — `insert` generalized
+    /// from a leaf to a node. Empty tree ⇒ the subtree becomes the root verbatim.
+    /// Consumes `preselect` like insert does. `focused` moves to the subtree's leftmost leaf.
+    func insertSubtree(_ node: BSPNode,
+                       focusedFrame: CGRect? = nil,
+                       insertAt: InsertAt = .after,
+                       autoSplit: AutoSplit = .longerEdge,
+                       ratio: Double = 0.5) {
         guard let root = root else {
-            self.root = BSPNode(leaf: win)
-            focused = win
+            node.parent = nil
+            self.root = node
+            focused = node.leftmostLeaf().windowID
             return
         }
 
@@ -80,11 +95,10 @@ final class BSPTree {
         preselect = nil
 
         let oldLeaf = BSPNode(leaf: oldWin)
-        let newLeaf = BSPNode(leaf: win)
-        let (first, second) = (insertAt == .after) ? (oldLeaf, newLeaf) : (newLeaf, oldLeaf)
+        let (first, second) = (insertAt == .after) ? (oldLeaf, node) : (node, oldLeaf)
         let split = BSPNode(split: orientation, ratio: ratio, first: first, second: second)
         replace(target, with: split)
-        focused = win
+        focused = node.leftmostLeaf().windowID
     }
 
     private func autoOrientation(_ frame: CGRect?, autoSplit: AutoSplit) -> Orientation {
@@ -115,6 +129,16 @@ final class BSPTree {
         // Refocus if the focused window is no longer present.
         if focused == nil || root?.findLeaf(focused!) == nil {
             focused = sibling.leftmostLeaf().windowID
+        }
+    }
+
+    /// Remove all of `ids` in one pass, preserving the survivors' relative structure.
+    /// Repairs `focused` if it was removed.
+    func removeAll(_ ids: Set<WinID>) {
+        guard !ids.isEmpty else { return }
+        root = root?.pruned(keeping: { !ids.contains($0) })
+        if focused == nil || root?.findLeaf(focused!) == nil {
+            focused = root?.leftmostLeaf().windowID   // nil when the tree is now empty
         }
     }
 

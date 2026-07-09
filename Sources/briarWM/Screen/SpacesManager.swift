@@ -88,6 +88,13 @@ final class SpacesManager {
         cid != 0 && getWindow != nil && copySpacesForWindows != nil && copyManagedDisplaySpaces != nil
     }
 
+    /// Weaker than `isAvailable`: true when a live AX element can be mapped to its
+    /// window-server id (`_AXUIElementGetWindow` — all `cgWindowID(for:)` needs; it doesn't
+    /// touch the connection or the Space-query symbols). Layout persistence gates on this so
+    /// it keeps working in pseudo-Space mode, where the extra membership/layout symbols may
+    /// be missing but window identity across a same-session restart still holds.
+    var canIdentifyWindows: Bool { getWindow != nil }
+
     // MARK: - Reads
 
     /// The CGWindowID backing an AX window element (via private `_AXUIElementGetWindow`).

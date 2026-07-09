@@ -203,4 +203,116 @@ import Foundation
         guard case .split(let o, _, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
         #expect(o == .vertical)
     }
+
+    // MARK: - pruned(keeping:)
+
+    /// H(0.7) split of leaf1 and V(0.3) split of leaf2,leaf3. Built by hand so the
+    /// ratios/orientations under test aren't whatever `insert` happened to pick.
+    private func threeWindowTree() -> BSPNode {
+        let inner = BSPNode(split: .vertical, ratio: 0.3, first: BSPNode(leaf: WinID(2)), second: BSPNode(leaf: WinID(3)))
+        return BSPNode(split: .horizontal, ratio: 0.7, first: BSPNode(leaf: WinID(1)), second: inner)
+    }
+
+    @Test func prunedKeepsRatiosAndOrientationsAndCollapses() {
+        // Drop win3: inner V split collapses to leaf2; outer H(0.7) survives verbatim.
+        let pruned = threeWindowTree().pruned { $0 != WinID(3) }
+        guard case .split(let o, let r, let a, let b)? = pruned?.kind else { Issue.record("expected split"); return }
+        #expect(o == .horizontal)
+        #expect(approx(CGFloat(r), 0.7))
+        #expect(a.windowID == WinID(1))
+        #expect(b.windowID == WinID(2))   // inner split collapsed to its sole survivor
+    }
+
+    @Test func prunedCollapsesNestedSingleSurvivorToLeaf() {
+        // Keep only win2: everything collapses down to a bare leaf.
+        let pruned = threeWindowTree().pruned { $0 == WinID(2) }
+        #expect(pruned?.isLeaf == true)
+        #expect(pruned?.windowID == WinID(2))
+    }
+
+    @Test func prunedAllRemovedIsNil() {
+        #expect(threeWindowTree().pruned { _ in false } == nil)
+    }
+
+    @Test func prunedWiresParentLinks() {
+        // A pruned copy must be a functioning tree: remove() relies on parent links to
+        // find and promote a sibling. If parents were left dangling this would no-op.
+        let t = BSPTree(display: 1)
+        t.root = threeWindowTree().pruned { _ in true }   // full deep copy
+        t.focused = WinID(3)
+        t.remove(WinID(2))
+        #expect(t.root!.leafWindowIDs() == [WinID(1), WinID(3)])
+        #expect(t.contains(WinID(3)))
+    }
+
+    // MARK: - removeAll
+
+    @Test func removeAllPreservesSurvivorStructure() {
+        // even-horizontal chain of 4; drop the two middle windows.
+        let t = BSPTree(display: 1)
+        t.root = LayoutPreset.evenHorizontal.build([1, 2, 3, 4].map(WinID.init))
+        t.focused = WinID(1)
+        t.removeAll([WinID(2), WinID(3)])
+        #expect(t.root!.leafWindowIDs() == [WinID(1), WinID(4)])   // survivors keep order
+    }
+
+    @Test func removeAllRepairsFocusWhenRemoved() {
+        let t = BSPTree(display: 1)
+        t.root = LayoutPreset.evenHorizontal.build([1, 2, 3].map(WinID.init))
+        t.focused = WinID(2)
+        t.removeAll([WinID(2)])
+        #expect(t.focused != nil)
+        #expect(t.contains(t.focused!))
+    }
+
+    @Test func removeAllKeepsFocusWhenSurvivor() {
+        let t = BSPTree(display: 1)
+        t.root = LayoutPreset.evenHorizontal.build([1, 2, 3].map(WinID.init))
+        t.focused = WinID(1)
+        t.removeAll([WinID(3)])
+        #expect(t.focused == WinID(1))   // untouched survivor stays focused
+    }
+
+    @Test func removeAllEmptiesTree() {
+        let t = BSPTree(display: 1)
+        t.root = LayoutPreset.evenHorizontal.build([1, 2].map(WinID.init))
+        t.focused = WinID(1)
+        t.removeAll([WinID(1), WinID(2)])
+        #expect(t.isEmpty)
+        #expect(t.focused == nil)
+    }
+
+    // MARK: - insertSubtree
+
+    @Test func insertSubtreeIntoEmptyTreeBecomesRootVerbatim() {
+        let t = BSPTree(display: 1)
+        let sub = BSPNode(split: .vertical, ratio: 0.3, first: BSPNode(leaf: WinID(5)), second: BSPNode(leaf: WinID(6)))
+        t.insertSubtree(sub)
+        #expect(t.root === sub)                                // installed as-is
+        #expect(t.root!.leafWindowIDs() == [WinID(5), WinID(6)])
+        #expect(t.focused == WinID(5))                         // leftmost leaf
+    }
+
+    @Test func insertSubtreeSplitsFocusedLeaf() {
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        let sub = BSPNode(split: .vertical, ratio: 0.3, first: BSPNode(leaf: WinID(2)), second: BSPNode(leaf: WinID(3)))
+        t.insertSubtree(sub, focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 400))  // H split
+        #expect(t.root!.leafWindowIDs() == [WinID(1), WinID(2), WinID(3)])
+        guard case .split(let o, _, let a, _)? = t.root?.kind else { Issue.record("expected split"); return }
+        #expect(o == .horizontal)
+        #expect(a.windowID == WinID(1))     // existing leaf first (insertAt .after)
+        #expect(t.focused == WinID(2))      // subtree's leftmost leaf
+    }
+
+    @Test func insertSubtreeConsumesPreselect() {
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        t.preselect = .vertical
+        let sub = BSPNode(split: .horizontal, ratio: 0.5, first: BSPNode(leaf: WinID(2)), second: BSPNode(leaf: WinID(3)))
+        t.insertSubtree(sub, focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 100))  // would be H by longer-edge
+        guard case .split(let o, _, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
+        #expect(o == .vertical)        // preselect wins
+        #expect(t.preselect == nil)    // cleared
+    }
 }

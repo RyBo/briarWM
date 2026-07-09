@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configWatcher: ConfigWatcher?
     private var permissionTimer: Timer?
     private var overlay: FocusOverlayController?
+    /// SIGINT/SIGTERM sources kept alive for the process's lifetime so a `make run` Ctrl-C or a
+    /// `kill` flushes the layout before exit. (`applicationWillTerminate` covers the AppKit path.)
+    private var signalSources: [DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -56,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.overlay = overlay
 
         manager.start()
+        installTerminationHandlers()
         statusItem = StatusItemController(manager: manager)
         if let configError { statusItem?.showConfigError(configError) }
 
@@ -63,5 +67,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             manager?.reload()
         }
         configWatcher?.start()
+    }
+
+    /// Flush the layout on the AppKit terminate path (`restart` command, Quit, logout). Cheap
+    /// and idempotent, so double-flushing alongside the signal handlers is fine.
+    func applicationWillTerminate(_ notification: Notification) {
+        manager?.saveLayoutNow()
+    }
+
+    /// AppKit doesn't route bare SIGINT/SIGTERM through `applicationWillTerminate`, so a `make
+    /// run` Ctrl-C or a `kill` would lose the layout. Ignore the default disposition and handle
+    /// each on the main queue: flush, then terminate cleanly.
+    private func installTerminationHandlers() {
+        for sig in [SIGINT, SIGTERM] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                self?.manager?.saveLayoutNow()
+                NSApp.terminate(nil)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
     }
 }

@@ -66,6 +66,22 @@ final class WindowManager: AXEventSink {
     /// The window-server fingerprint from the last poll tick — `pollReconcile()` skips
     /// the full sweep when it hasn't changed.
     var lastPollSnapshot: WindowServerSnapshot?
+    /// Trailing-debounce timer for layout persistence (see WindowManager+Persistence). Coalesces
+    /// a reflow's retile storm into one disk write; `internal` so the extension can drive it.
+    var layoutSaveTimer: Timer?
+    /// Owns the "can I trust the window server right now?" decision across sleep/wake. Its
+    /// three states — active (normal), suspended (displays asleep, all liveness signals lie),
+    /// settling (post-wake, run the non-destructive pass but hold reap/rehome/float until
+    /// windows read alive again) — replace the old `reconcileSuspended` flag and
+    /// `pendingMassReap` set. Driven by the sleep/wake notifications and the census in
+    /// `reapDeadWindows`; see `ReconcileGate`.
+    var gate = ReconcileGate()
+    /// Saved desktop shapes not yet applied (see WindowManager+Persistence): a hidden desktop's
+    /// windows can't be resolved to their Space at startup, so its restore waits here until the
+    /// reconcile pass surfaces them. Keyed by Space; entries drop when the desktop is first
+    /// user-visible or at `pendingRestoreExpiry`.
+    var pendingRestore: [SpaceID: TreeSnapshot] = [:]
+    var pendingRestoreExpiry: Date?
 
     var keymap: Keymap
     var currentMode = Keymap.defaultMode
@@ -115,6 +131,7 @@ final class WindowManager: AXEventSink {
         for d in screens.displayIDs { ensureTree(space: activeSpace[d] ?? pseudoSpace(d), display: d) }
         applyKeymap()
         adoptExistingWindows()
+        restoreLayout()
         retileAll()
         let tiled = trees.values.reduce(0) { $0 + $1.windowIDs.count }
         Log.logger.info("briarWM started: \(tiled) tiled, \(registry.floating.count) floating, \(screens.displayIDs.count) display(s), \(trees.count) desktop tree(s)")
@@ -132,10 +149,25 @@ final class WindowManager: AXEventSink {
     /// — so re-read the active Spaces, re-home any windows that drifted, and re-apply every
     /// frame. Idempotent; safe to call on each wake/unlock notification.
     func resync() {
+        // Lift the sleep suspension only once a display is really on: a dark wake fires
+        // didWake while the panel is still off, and reconciling then would trust the same
+        // garbage signals the suspension exists to block. A later wake/unlock notification
+        // (or the poll's self-heal) retries. Wake lands in settling, not active — destructive
+        // reconcile stays held until a census reads windows alive.
+        if !gate.allowsReconcile {
+            guard screens.anyDisplayAwake else { return }   // dark wake: panel still off
+            if gate.wake() { Log.logger.info("displays awake — reconcile resumed (settling)") }
+        }
         refreshActiveSpaces()
         reconcileSpaces()
         retileAll()
-        Log.logger.debug("resync after wake/unlock")
+        Log.logger.info("resync after wake/unlock")
+    }
+
+    /// Displays went to sleep (lid close, idle sleep, system sleep). Freeze reconciliation
+    /// until `resync()` confirms a display is awake again.
+    func displaysWillSleep() {
+        if gate.suspend() { Log.logger.info("displays sleeping — reconcile suspended") }
     }
 
     // MARK: - App tracking
@@ -270,6 +302,16 @@ final class WindowManager: AXEventSink {
     /// own extra cleanup (registry unregister, minimize park, re-insert elsewhere) on top.
     func detach(_ id: WinID, from tree: BSPTree, newFocus: WinID? = nil) {
         tree.remove(id)
+        clearSlotBookkeeping(id, from: tree, newFocus: newFocus)
+    }
+
+    /// Drop the per-window tiling bookkeeping tied to `id`'s slot — desired frame, sticky
+    /// observation, zoom — repointing focus to `tree`'s remembered window (or `newFocus`)
+    /// when `id` was the focused one. Everything `detach` does EXCEPT removing the leaf, so a
+    /// batch re-home can prune many windows from a tree in one pass (`removeAll`) and still
+    /// shed each one's bookkeeping identically. Call after the removal — it reads the already
+    /// repaired `tree.focused`.
+    func clearSlotBookkeeping(_ id: WinID, from tree: BSPTree, newFocus: WinID? = nil) {
         desiredFrames.removeValue(forKey: id)
         stickyOnce.remove(id)
         if zoomedID == id { zoomedID = nil }
@@ -353,6 +395,7 @@ final class WindowManager: AXEventSink {
     /// a destination desktop after a move. This is the core per-Space invariant: AX
     /// `setFrame` never touches windows on a hidden desktop.
     func retile(_ tree: BSPTree, force: Bool = false) {
+        scheduleLayoutSave()   // BEFORE the guard: parked-tree mutations must still schedule a save
         guard let screen = screens.screen(for: tree.display) else { return }
         let area = screens.tilingAreaAX(for: screen, outerGap: config.gaps.outer)
         var frames = LayoutEngine.computeFrames(root: tree.root, area: area, innerGap: config.gaps.inner)
