@@ -13,11 +13,16 @@ extension WindowManager {
     /// skip.
     func pollReconcile() {
         // Self-heal path for the sleep suspension: if every wake notification was missed,
-        // the first tick with a lit display resumes reconciliation.
-        if reconcileSuspended {
+        // the first tick with a lit display resumes reconciliation (into settling).
+        if !gate.allowsReconcile {
             guard screens.anyDisplayAwake else { return }
-            reconcileSuspended = false
-            Log.logger.info("displays awake — reconcile resumed (poll)")
+            if gate.wake() { Log.logger.info("displays awake — reconcile resumed (settling) (poll)") }
+        } else if !screens.anyDisplayAwake {
+            // Self-suspend: the poll can fire in the gap between displays going dark and the
+            // sleep notification arriving, when every liveness signal is already garbage. Beat
+            // the notification so a pre-sleep pass never primes a reap.
+            if gate.suspend() { Log.logger.info("displays sleeping — reconcile suspended (poll)") }
+            return
         }
         let snapshot = WindowServerSnapshot.capture()
         if let snapshot, snapshot == lastPollSnapshot {
@@ -44,7 +49,14 @@ extension WindowManager {
     /// resync) leaves it false so reconciliation only *repairs the focus cache* and never
     /// steals OS keyboard focus out from under the user.
     func reconcileSpaces(moveFocus: Bool = false) {
-        guard !reconcileSuspended else { return }      // displays asleep: every signal is garbage
+        // Dark-display self-suspend, one choke point for every notification-driven caller
+        // (Space change, app activation, screensChanged, resync): any of them can land here
+        // in the gap before the sleep notification arrives, when every signal is already
+        // garbage. Beat the notification so no pre-sleep pass reconciles.
+        if gate.allowsReconcile, !screens.anyDisplayAwake {
+            if gate.suspend() { Log.logger.info("displays sleeping — reconcile suspended") }
+        }
+        guard gate.allowsReconcile else { return }     // displays asleep: every signal is garbage
         refreshActiveSpaces()                          // (1) keep activeSpace fresh
         passFrames = snapshotVisibleFrames()           // one AX read per window for the whole pass
         defer { passFrames = nil }
@@ -81,7 +93,10 @@ extension WindowManager {
         // placement. Re-pointing here makes the backstop poll self-heal what used to require
         // a briarWM restart.
         repointTreesToOwningDisplay(spaceDisplay, dirty: &dirty)
-        rehomeDriftedWindows(spaceDisplay, dirty: &dirty)
+        // Destructive, so held during a settle (also covers sticky-float demotion, which lives
+        // inside it). `repointTreesToOwningDisplay` and `applyPendingRestores` stay ungated —
+        // structure-preserving and wanted while settling.
+        if gate.allowsDestructive { rehomeDriftedWindows(spaceDisplay, dirty: &dirty) }
         applyPendingRestores(dirty: &dirty)    // rebuild desktops whose windows just surfaced
 
         retileDirtyAndVisible(dirty)
@@ -217,17 +232,25 @@ extension WindowManager {
             }
         }
 
-        // Circuit breaker: most-of-everything reading dead at once is a display-sleep /
-        // window-server transition, not real (Cmd-Q cleanup arrives via removeApp, never
-        // here). Believe it only when the exact same set reads dead on the next pass too —
-        // a real mass close survives the retry, a transition clears within one tick.
+        // The gate weighs the census: an all-dead read is a window-server transition (drop to
+        // settling, hold destructive ops), a partial mass-dead is the Firefox missed-destroy
+        // backstop (confirm only on a timed second pass), and anything smaller reaps now. The
+        // circuit breaker's continuity now has a time bound, and a prime can't survive a
+        // sleep/wake — see `ReconcileGate`.
         let deadIDs = Set(dead.map(\.id))
-        if dead.count >= 2, dead.count * 2 > scanned, deadIDs != pendingMassReap {
-            pendingMassReap = deadIDs
+        let wasSettling = gate.state == .settling
+        switch gate.census(scanned: scanned, dead: deadIDs, now: Date()) {
+        case .unreliable:
+            if !wasSettling && gate.state == .settling {
+                Log.logger.info("all \(dead.count)/\(scanned) windows read dead — window-server transition, destructive reconcile deferred")
+            }
+            return []
+        case .deferred:
             Log.logger.info("reap deferred: \(dead.count)/\(scanned) windows read dead at once")
             return []
+        case .reap:
+            if wasSettling { Log.logger.info("windows read alive (\(scanned - dead.count)/\(scanned)) — destructive reconcile resumed") }
         }
-        pendingMassReap = []
 
         var dirty: Set<SpaceID> = []
         for (tree, id) in dead {

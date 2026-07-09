@@ -50,7 +50,7 @@ final class AppWatcher {
 
         // Display/system sleep: between lid close and actual sleep the poll can still fire,
         // and every liveness signal (AX exists, CGS window id, Space membership) reads "gone"
-        // for windows that are fine — suspend reconciliation until a wake path clears it.
+        // for windows that are fine — suspend the reconcile gate until a wake path settles it.
         let sleep: (Notification) -> Void = { [weak self] _ in self?.manager.displaysWillSleep() }
         tokens.append(ws.addObserver(forName: NSWorkspace.screensDidSleepNotification,
                                      object: nil, queue: .main, using: sleep))

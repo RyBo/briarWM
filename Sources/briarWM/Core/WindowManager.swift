@@ -69,15 +69,13 @@ final class WindowManager: AXEventSink {
     /// Trailing-debounce timer for layout persistence (see WindowManager+Persistence). Coalesces
     /// a reflow's retile storm into one disk write; `internal` so the extension can drive it.
     var layoutSaveTimer: Timer?
-    /// True between display-sleep and wake. In that window AX liveness and CGS Space queries
-    /// both read "gone" for windows that are fine, so reconciliation (reap/rehome/float) must
-    /// not run — a lid close would otherwise reap every window and re-adopt them scrambled on
-    /// wake. Set by the screens/system sleep notifications; cleared by `resync()` once a
-    /// display is actually awake, with a self-heal check in `pollReconcile()` as backstop.
-    var reconcileSuspended = false
-    /// The window set a mass-reap was deferred for (see `reapDeadWindows`): everything reading
-    /// dead at once is a transition artifact, so it's only believed on the second consecutive pass.
-    var pendingMassReap: Set<WinID> = []
+    /// Owns the "can I trust the window server right now?" decision across sleep/wake. Its
+    /// three states — active (normal), suspended (displays asleep, all liveness signals lie),
+    /// settling (post-wake, run the non-destructive pass but hold reap/rehome/float until
+    /// windows read alive again) — replace the old `reconcileSuspended` flag and
+    /// `pendingMassReap` set. Driven by the sleep/wake notifications and the census in
+    /// `reapDeadWindows`; see `ReconcileGate`.
+    var gate = ReconcileGate()
     /// Saved desktop shapes not yet applied (see WindowManager+Persistence): a hidden desktop's
     /// windows can't be resolved to their Space at startup, so its restore waits here until the
     /// reconcile pass surfaces them. Keyed by Space; entries drop when the desktop is first
@@ -154,11 +152,11 @@ final class WindowManager: AXEventSink {
         // Lift the sleep suspension only once a display is really on: a dark wake fires
         // didWake while the panel is still off, and reconciling then would trust the same
         // garbage signals the suspension exists to block. A later wake/unlock notification
-        // (or the poll's self-heal) retries.
-        if reconcileSuspended {
-            guard screens.anyDisplayAwake else { return }
-            reconcileSuspended = false
-            Log.logger.info("displays awake — reconcile resumed")
+        // (or the poll's self-heal) retries. Wake lands in settling, not active — destructive
+        // reconcile stays held until a census reads windows alive.
+        if !gate.allowsReconcile {
+            guard screens.anyDisplayAwake else { return }   // dark wake: panel still off
+            if gate.wake() { Log.logger.info("displays awake — reconcile resumed (settling)") }
         }
         refreshActiveSpaces()
         reconcileSpaces()
@@ -169,9 +167,7 @@ final class WindowManager: AXEventSink {
     /// Displays went to sleep (lid close, idle sleep, system sleep). Freeze reconciliation
     /// until `resync()` confirms a display is awake again.
     func displaysWillSleep() {
-        guard !reconcileSuspended else { return }
-        reconcileSuspended = true
-        Log.logger.info("displays sleeping — reconcile suspended")
+        if gate.suspend() { Log.logger.info("displays sleeping — reconcile suspended") }
     }
 
     // MARK: - App tracking

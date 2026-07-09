@@ -28,6 +28,10 @@ extension WindowManager {
     func saveLayoutNow() {
         layoutSaveTimer?.invalidate()
         layoutSaveTimer = nil
+        // Suspended (displays asleep) means the live trees may already be garbage — a save
+        // scheduled just before suspension must not overwrite the good on-disk layout. Settling
+        // saves stay allowed: the trees are intact, destructive reconcile just hasn't resumed.
+        guard gate.allowsReconcile else { return }
         guard spaces.canIdentifyWindows else { return }
         guard let bootTime = LayoutStore.currentBootTime() else {
             Log.logger.debug("layout save skipped: kern.boottime unavailable")
