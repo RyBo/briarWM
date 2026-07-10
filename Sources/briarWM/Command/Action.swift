@@ -13,6 +13,7 @@ enum Action: Equatable {
     case balance
     case fullscreen
     case toggleFloat
+    case toggleWorkspaceFloat  // float every window on the current desktop; again snaps back
     case focusModeToggle
     case close
     case workspace(Int)        // switch to desktop N (1-based, per the focused display)
@@ -86,6 +87,11 @@ extension Action {
             switch lc.first {
             case "split": return .toggleSplit
             case "float", "floating": return .toggleFloat
+            case "workspace", "desktop":
+                // "toggle workspace float" / "toggle desktop floating". Bare "toggle
+                // workspace" has no float tail and must not parse.
+                let tail = lc.dropFirst().first
+                return (tail == "float" || tail == "floating") ? .toggleWorkspaceFloat : nil
             default: return nil
             }
 

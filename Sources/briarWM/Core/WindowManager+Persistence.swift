@@ -46,10 +46,14 @@ extension WindowManager {
             // A desktop still awaiting its pending restore is saved as the queued shape, not
             // the live tree — a restart before the user ever visits it must not flatten it.
             guard pendingRestore[tree.space] == nil else { continue }
-            guard let root = tree.root, let encoded = TreeSnapshotCodec.encode(root, id: winToCG) else { continue }
+            // In workspace-float mode the live tree is empty; persist the saved tiled shape so
+            // a restart brings the desktop back tiled (float mode itself resets to off).
+            let wf = tree.workspaceFloat
+            guard let root = wf?.savedRoot ?? tree.root,
+                  let encoded = TreeSnapshotCodec.encode(root, id: winToCG) else { continue }
             snapshots.append(TreeSnapshot(space: tree.space, display: tree.display,
-                                          focused: tree.focused.flatMap(winToCG),
-                                          layoutPreset: tree.layoutPreset?.rawValue,
+                                          focused: (wf?.savedFocused ?? tree.focused).flatMap(winToCG),
+                                          layoutPreset: (wf.map { $0.savedPreset } ?? tree.layoutPreset)?.rawValue,
                                           root: encoded))
         }
         snapshots.append(contentsOf: pendingRestore.values)

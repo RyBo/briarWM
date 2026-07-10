@@ -24,6 +24,21 @@ enum AutoSplit {
     }
 }
 
+/// Snapshot captured when a desktop enters workspace-float mode, so toggle-off can
+/// rebuild the exact prior tiled layout. All members are pure (`BSPNode`/`WinID`/
+/// `LayoutPreset`), so the state travels with the tree through parking and display
+/// re-pointing for free.
+struct WorkspaceFloatState {
+    /// The tiled shape at toggle-on. Holds live nodes — WinIDs are session-stable, so no
+    /// serialization is needed to reattach on toggle-off.
+    var savedRoot: BSPNode?
+    var savedFocused: WinID?
+    var savedPreset: LayoutPreset?
+    /// Windows this mode floated, plus any adopted while it was on. Toggle-off tiles the
+    /// survivors of this set back into `savedRoot`.
+    var floated: Set<WinID>
+}
+
 /// One BSP tree per display. Pure data structure + algorithms; knows nothing
 /// about the Accessibility API. Geometry-dependent operations (focus/resize)
 /// take a precomputed `frames` map so they stay testable.
@@ -45,6 +60,9 @@ final class BSPTree {
     /// where it left off; goes stale once a window is inserted/removed, which is fine —
     /// the next cycle press just rebuilds from the first preset onward.
     var layoutPreset: LayoutPreset?
+    /// Non-nil while this desktop is in workspace-float mode: the tree is emptied (so every
+    /// hot path treats it as inert) and this holds the shape to snap back to on toggle-off.
+    var workspaceFloat: WorkspaceFloatState?
 
     init(display: DisplayID, space: SpaceID = 0) {
         self.display = display
@@ -289,6 +307,51 @@ final class BSPTree {
         layoutPreset = preset
         // The window set is unchanged, so `focused` stays valid; re-point defensively.
         if let f = focused, root?.findLeaf(f) == nil {
+            focused = root?.leftmostLeaf().windowID
+        }
+    }
+
+    // MARK: - Workspace float
+
+    /// Enter workspace-float mode: capture the tiled shape and empty the tree so every hot
+    /// path (retile, rehome, reap, focus overlay) skips this desktop's windows as floats.
+    /// Returns the ids the caller must float. No-op returning `[]` if already in the mode.
+    func enterWorkspaceFloat() -> [WinID] {
+        guard workspaceFloat == nil else { return [] }
+        let ids = windowIDs
+        workspaceFloat = WorkspaceFloatState(savedRoot: root, savedFocused: focused,
+                                             savedPreset: layoutPreset, floated: Set(ids))
+        root = nil
+        focused = nil
+        layoutPreset = nil
+        return ids
+    }
+
+    /// Exit workspace-float mode: rebuild the saved shape over the windows in `returning`
+    /// (the survivors — ids closed or dragged away are dropped) and re-insert any newcomers.
+    /// No-op if not in the mode.
+    func exitWorkspaceFloat(returning: [WinID],
+                            insertAt: InsertAt = .after,
+                            autoSplit: AutoSplit = .longerEdge,
+                            ratio: Double = 0.5) {
+        guard let state = workspaceFloat else { return }
+        workspaceFloat = nil
+        // Windows manually unfloated during the mode already live in the tree; capture them
+        // before the root swap so it doesn't orphan them.
+        let preexisting = windowIDs
+        let returningSet = Set(returning)
+        root = state.savedRoot?.pruned(keeping: { returningSet.contains($0) })
+        layoutPreset = state.savedPreset
+        // Insert anything the saved shape didn't place: manually-tiled leftovers plus any
+        // returning id adopted while floating (no slot in the old shape).
+        let placed = Set(root?.leafWindowIDs() ?? [])
+        for id in preexisting + returning.filter({ !placed.contains($0) }) where root?.findLeaf(id) == nil {
+            insert(id, insertAt: insertAt, autoSplit: autoSplit, ratio: ratio)
+        }
+        // Restore focus last — each `insert` above moves `focused` onto the inserted leaf.
+        if let saved = state.savedFocused, root?.findLeaf(saved) != nil {
+            focused = saved
+        } else {
             focused = root?.leftmostLeaf().windowID
         }
     }

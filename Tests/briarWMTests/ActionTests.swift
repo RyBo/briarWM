@@ -44,6 +44,15 @@ import Testing
         #expect(Action.parse("mode default") == .exitMode)
     }
 
+    @Test func workspaceFloatToggle() {
+        #expect(Action.parse("toggle workspace float") == .toggleWorkspaceFloat)
+        #expect(Action.parse("toggle desktop floating") == .toggleWorkspaceFloat)
+        #expect(Action.parse("Toggle Workspace Float") == .toggleWorkspaceFloat)
+        // The bare head must not swallow "toggle workspace" (no float tail).
+        #expect(Action.parse("toggle workspace") == nil)
+        #expect(Action.parse("toggle desktop") == nil)
+    }
+
     @Test func workspaceSwitch() {
         #expect(Action.parse("workspace 3") == .workspace(3))
         #expect(Action.parse("desktop 1") == .workspace(1))

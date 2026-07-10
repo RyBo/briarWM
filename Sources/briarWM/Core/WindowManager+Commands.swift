@@ -113,6 +113,9 @@ extension WindowManager {
             let space = registry.window(for: fid).map { resolveSpace($0, display: display).space }
                 ?? activeSpace[display] ?? pseudoSpace(display)
             let tree = ensureTree(space: space, display: display)
+            // In workspace-float mode this window becomes the lone tiled one; toggle-off
+            // re-inserts it via the pre-existing-tiled path, so drop it from the float set.
+            tree.workspaceFloat?.floated.remove(fid)
             tree.insert(fid, focusedFrame: insertionHint(for: tree),
                         autoSplit: autoSplit, ratio: config.layout.defaultRatio)
             retile(tree)
@@ -122,10 +125,61 @@ extension WindowManager {
             // override. newFocus: fid keeps focus on the window we just floated.
             detach(fid, from: tree, newFocus: fid)
             registry.setFloating(fid, true)
+            // Re-floating a window that was manually tiled during workspace-float mode: put
+            // it back in the set so toggle-off doesn't leave it stranded as a float.
+            tree.workspaceFloat?.floated.insert(fid)
             retile(tree)
         }
         // The focused window is now a float (or newly tiled) — retile's internal notify only
         // fires for windows in the retiled tree, so push the overlay update explicitly here.
+        notifyFocusOverlay(pulse: false)
+    }
+
+    /// Float the whole current desktop so windows drag freely; press again to snap every
+    /// survivor back to the exact prior tiled layout. The tree empties while the mode is on,
+    /// which makes it inert to retile/rehome/reap — new windows adopted meanwhile float too
+    /// and tile in on toggle-off.
+    func toggleWorkspaceFloat() {
+        // `activeTarget()` can't resolve the target here — the tree is empty during the mode,
+        // so derive the active desktop from the focused window's display directly.
+        let display = focusedID.flatMap { displayForID($0) } ?? screens.displayIDs.first ?? 0
+        let space   = activeSpace[display] ?? pseudoSpace(display)
+        let tree    = ensureTree(space: space, display: display)
+
+        if tree.workspaceFloat == nil {
+            // A queued startup restore for this Space would later clobber the layout we're
+            // about to stash as the float snapshot — drop it.
+            pendingRestore.removeValue(forKey: space)
+            let ids = tree.enterWorkspaceFloat()
+            for id in ids {
+                registry.setFloating(id, true)
+                clearSlotBookkeeping(id, from: tree, newFocus: id)   // keep focus on the float
+            }
+            Log.logger.info("workspace float ON: floated \(ids.count) window(s) on space \(space)")
+        } else {
+            // Deterministic order so leftover insertion order is stable across runs.
+            var returning: [WinID] = []
+            for id in (tree.workspaceFloat?.floated ?? []).sorted(by: { $0.rawValue < $1.rawValue }) {
+                guard let window = registry.window(for: id), registry.isFloating(id),
+                      !registry.isMinimized(id) else { continue }   // closed/minimized while floating
+                let (real, sticky) = resolveSpace(window, display: displayForID(id) ?? display)
+                if sticky || real != space { continue }             // dragged away → stays a float there
+                returning.append(id)
+            }
+            for id in returning { registry.setFloating(id, false) }
+            tree.exitWorkspaceFloat(returning: returning,
+                                    insertAt: InsertAt(rawValue: config.layout.insertAt) ?? .after,
+                                    autoSplit: autoSplit, ratio: config.layout.defaultRatio)
+            // Let the user's live focus win if it landed in the tree; else adopt the tree's
+            // restored focus (cache only — never steal OS focus here).
+            if let fid = focusedID, tree.contains(fid) {
+                tree.focused = fid
+            } else if let f = tree.focused {
+                focusedID = f
+            }
+            Log.logger.info("workspace float OFF: tiled \(returning.count) window(s) on space \(space)")
+        }
+        retile(tree)
         notifyFocusOverlay(pulse: false)
     }
 
@@ -194,6 +248,9 @@ extension WindowManager {
         spaces.moveWindow(wid, toSpace: target)           // window-server move (no AX frame change)
         detach(fid, from: srcTree)                         // clears zoom/focus/frame bookkeeping
         let dst = ensureTree(space: target, display: display)
+        // A window sent onto a floating desktop floats there rather than tiling in — skip the
+        // insert and the forced off-screen retile (nothing to size).
+        if adoptIntoWorkspaceFloat(fid, tree: dst) { retile(srcTree); return }
         dst.insert(fid, focusedFrame: insertionHint(for: dst),
                    autoSplit: autoSplit, ratio: config.layout.defaultRatio)
         retile(srcTree)                                   // active source → gap closes
