@@ -224,6 +224,10 @@ final class WindowManager: AXEventSink {
             return
         }
         let tree = ensureTree(space: space, display: display)
+        if adoptIntoWorkspaceFloat(id, tree: tree) {   // desktop is in workspace-float mode
+            if focus { focusedID = id }
+            return
+        }
         let focusedFrame = insertionHint(for: tree) ?? window.frame
         tree.insert(id, focusedFrame: focusedFrame,
                     insertAt: InsertAt(rawValue: config.layout.insertAt) ?? .after,
@@ -232,6 +236,17 @@ final class WindowManager: AXEventSink {
         if focus { focusedID = id }
         Log.logger.debug("tile \(id) \(window.title ?? "?") on display \(display) space \(space)")
         if doRetile { retile(tree) }
+    }
+
+    /// A window arriving while `tree` is in workspace-float mode floats too and joins the set
+    /// that toggle-off will tile. Returns true when the mode is on (caller skips its normal
+    /// insert). Internal, not private: the +Commands/+Spaces extensions call it.
+    @discardableResult
+    func adoptIntoWorkspaceFloat(_ id: WinID, tree: BSPTree) -> Bool {
+        guard tree.workspaceFloat != nil else { return false }
+        registry.setFloating(id, true)
+        tree.workspaceFloat?.floated.insert(id)
+        return true
     }
 
     func isTileable(_ window: AXWindow) -> Bool {
@@ -318,7 +333,9 @@ final class WindowManager: AXEventSink {
         if focusedID == id { focusedID = newFocus ?? tree.focused }
     }
 
-    private func pruneEmptyParkedTrees() { parkedTrees.removeAll { $0.isEmpty } }
+    // A workspace-float tree is intentionally empty (`root == nil`) but must survive — its
+    // saved shape is the only record of the layout to restore on toggle-off.
+    private func pruneEmptyParkedTrees() { parkedTrees.removeAll { $0.isEmpty && $0.workspaceFloat == nil } }
 
     /// Per-display pseudo-Space used when Space queries are unavailable: stable, unique,
     /// and always treated as active → identical to the old one-tree-per-display behavior.

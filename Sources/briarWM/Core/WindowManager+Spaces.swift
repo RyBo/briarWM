@@ -153,8 +153,13 @@ extension WindowManager {
                 src.removeAll(moved)
                 for id in moved { clearSlotBookkeeping(id, from: src) }
                 let dst = ensureTree(space: dstSpace, display: spaceDisplay[dstSpace] ?? src.display)
-                dst.insertSubtree(subtree, focusedFrame: insertionHint(for: dst),
-                                  autoSplit: autoSplit, ratio: config.layout.defaultRatio)
+                if dst.workspaceFloat != nil {
+                    // Destination is floating: each dragged-in window floats rather than tiling.
+                    for id in moved { adoptIntoWorkspaceFloat(id, tree: dst) }
+                } else {
+                    dst.insertSubtree(subtree, focusedFrame: insertionHint(for: dst),
+                                      autoSplit: autoSplit, ratio: config.layout.defaultRatio)
+                }
                 dirty.insert(src.space)
                 dirty.insert(dstSpace)
                 Log.logger.info("reconcile: moved \(moved.count) window(s) space \(src.space) → \(dstSpace) as intact subtree")
@@ -311,11 +316,15 @@ extension WindowManager {
     /// dropped (the caller leaves it out of `parkedTrees`).
     private func restorePark(_ tree: BSPTree, onto display: DisplayID) {
         for id in tree.windowIDs where registry.window(for: id) == nil { tree.remove(id) }
-        guard !tree.isEmpty else { return }
+        // A workspace-float tree is empty by design; let it back through so its saved shape
+        // isn't lost when its monitor returns.
+        guard !tree.isEmpty || tree.workspaceFloat != nil else { return }
         tree.display = display
         if let existing = trees[tree.space], existing !== tree {
-            existing.insertSubtree(tree.root!, focusedFrame: nil, autoSplit: autoSplit,
-                                   ratio: config.layout.defaultRatio)
+            if let root = tree.root {
+                existing.insertSubtree(root, focusedFrame: nil, autoSplit: autoSplit,
+                                       ratio: config.layout.defaultRatio)
+            }
         } else {
             trees[tree.space] = tree
         }

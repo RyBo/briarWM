@@ -111,6 +111,7 @@ parse, `mode` actions that reference undefined modes, and regexes that don't com
 | balance ratios | `mod+shift+e` |
 | fullscreen (zoom) | `mod+f` |
 | toggle floating | `mod+shift+space` |
+| float whole desktop (again snaps back) | `mod+ctrl+space` |
 | focus tiled ↔ floating | `mod+space` |
 | close window | `mod+shift+q` |
 | switch to desktop 1-5 | `mod+1` ... `mod+5` |

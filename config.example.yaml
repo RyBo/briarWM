@@ -91,6 +91,7 @@ keybindings:
   # window / layout
   "mod+f": "fullscreen"
   "mod+shift+space": "toggle float"
+  "mod+ctrl+space": "toggle workspace float"   # float the whole desktop; again = snap back
   "mod+space": "focus mode toggle"
   "mod+shift+q": "close"
 
