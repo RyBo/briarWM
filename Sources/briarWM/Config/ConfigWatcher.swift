@@ -18,19 +18,21 @@ final class ConfigWatcher {
 
     private func arm() {
         stop()
-        fd = open(url.path, O_EVTONLY)
-        guard fd >= 0 else {
+        let newFd = open(url.path, O_EVTONLY)
+        guard newFd >= 0 else {
             // File may not exist yet; retry shortly.
+            fd = -1
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.arm() }
             return
         }
+        fd = newFd
         let src = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd, eventMask: [.write, .delete, .rename, .extend], queue: .main)
+            fileDescriptor: newFd, eventMask: [.write, .delete, .rename, .extend], queue: .main)
         src.setEventHandler { [weak self] in self?.handleEvent() }
-        src.setCancelHandler { [weak self] in
-            if let fd = self?.fd, fd >= 0 { close(fd) }
-            self?.fd = -1
-        }
+        // Close the fd this source owns, captured by value. The cancel handler runs
+        // asynchronously, so reading self.fd here would close whatever fd a later arm()
+        // has since opened — that race left the watcher dead after the first reload.
+        src.setCancelHandler { close(newFd) }
         src.resume()
         source = src
     }
