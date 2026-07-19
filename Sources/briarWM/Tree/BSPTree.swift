@@ -288,12 +288,17 @@ final class BSPTree {
         }
     }
 
-    /// Flip the orientation of the focused window's parent split.
-    func toggleSplitOrientation(of win: WinID) {
+    /// Flip the orientation of the focused window's parent split, returning the new
+    /// orientation — or nil when there's no split to flip (a lone leaf), so the caller can
+    /// stay silent for a no-op.
+    @discardableResult
+    func toggleSplitOrientation(of win: WinID) -> Orientation? {
         guard let leaf = root?.findLeaf(win),
               let p = leaf.parent,
-              case .split(let o, let r, let a, let b) = p.kind else { return }
-        p.kind = .split(orientation: o.flipped, ratio: r, first: a, second: b)
+              case .split(let o, let r, let a, let b) = p.kind else { return nil }
+        let flipped = o.flipped
+        p.kind = .split(orientation: flipped, ratio: r, first: a, second: b)
+        return flipped
     }
 
     // MARK: - Presets

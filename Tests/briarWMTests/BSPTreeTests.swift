@@ -199,9 +199,16 @@ import Foundation
         let t = BSPTree(display: 1)
         t.insert(WinID(1))
         t.insert(WinID(2), focusedFrame: CGRect(x: 0, y: 0, width: 1000, height: 400))   // horizontal
-        t.toggleSplitOrientation(of: WinID(2))
+        let result = t.toggleSplitOrientation(of: WinID(2))
+        #expect(result == .vertical)   // reports the new orientation
         guard case .split(let o, _, _, _)? = t.root?.kind else { Issue.record("expected split"); return }
         #expect(o == .vertical)
+    }
+
+    @Test func toggleSplitOrientationOnLoneLeafReturnsNil() {
+        let t = BSPTree(display: 1)
+        t.insert(WinID(1))
+        #expect(t.toggleSplitOrientation(of: WinID(1)) == nil)   // no parent split to flip
     }
 
     // MARK: - pruned(keeping:)

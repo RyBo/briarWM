@@ -7,6 +7,7 @@ final class StatusItemController {
     private let errorItem: NSMenuItem
     private var mode: String?
     private var configError: String?
+    private var sticky = StickyState()
 
     init(manager: WindowManager) {
         self.manager = manager
@@ -40,6 +41,14 @@ final class StatusItemController {
         manager.onConfigError = { [weak self] message in
             self?.showConfigError(message)
         }
+        manager.onStickyStateChanged = { [weak self] state in
+            self?.sticky = state
+            self?.refreshTitle()
+        }
+        // Seed from the current state: this controller is built after `manager.start()`, so a
+        // launch-time push (e.g. a persisted workspace-float restore) fired into a nil closure.
+        sticky = manager.currentStickyState()
+        refreshTitle()
     }
 
     /// Show a config load failure in the menu bar (first line in the menu, full error in
@@ -54,6 +63,7 @@ final class StatusItemController {
 
     private func refreshTitle() {
         var title = configError == nil ? "🌿" : "🌿⚠︎"
+        if !sticky.suffix.isEmpty { title += " \(sticky.suffix)" }
         if let mode { title += " \(mode)" }
         item.button?.title = title
     }

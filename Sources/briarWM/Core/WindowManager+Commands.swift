@@ -61,11 +61,12 @@ extension WindowManager {
     func preselect(_ orientation: Orientation) {
         guard let (_, tree) = activeTarget() else { return }
         tree.preselect = orientation
+        emitHud(.preselect(orientation))
     }
 
     func toggleSplit() {
         guard let (fid, tree) = activeTarget() else { return }
-        tree.toggleSplitOrientation(of: fid)
+        if let o = tree.toggleSplitOrientation(of: fid) { emitHud(.splitToggled(o)) }
         retile(tree)
     }
 
@@ -102,6 +103,7 @@ extension WindowManager {
     func toggleFullscreen() {
         guard let (fid, tree) = activeTarget() else { return }
         zoomedID = (zoomedID == fid) ? nil : fid
+        emitHud(.zoom(on: zoomedID == fid))
         retile(tree)
     }
 
@@ -133,6 +135,7 @@ extension WindowManager {
         // The focused window is now a float (or newly tiled) — retile's internal notify only
         // fires for windows in the retiled tree, so push the overlay update explicitly here.
         notifyFocusOverlay(pulse: false)
+        emitHud(.float(on: registry.isFloating(fid)))
     }
 
     /// Float the whole current desktop so windows drag freely; press again to snap every
@@ -181,6 +184,7 @@ extension WindowManager {
         }
         retile(tree)
         notifyFocusOverlay(pulse: false)
+        emitHud(.workspaceFloat(on: tree.workspaceFloat != nil))
     }
 
     func focusModeToggle() {
@@ -188,9 +192,10 @@ extension WindowManager {
         // window if a tiled one is focused, else focus the focused tree's window.
         guard let fid = focusedID else { return }
         if registry.isFloating(fid) {
-            if let (tiled, _) = preferredActiveFocus() { focus(windowID: tiled) }
+            if let (tiled, _) = preferredActiveFocus() { focus(windowID: tiled); emitHud(.focusMode(floating: false)) }
         } else if let anyFloating = registry.floating.first {
             focus(windowID: anyFloating)
+            emitHud(.focusMode(floating: true))
         }
     }
 
@@ -316,6 +321,7 @@ extension WindowManager {
         currentMode = name
         applyKeymap()
         onModeChanged?(name)
+        emitHud(.bindingMode(name))
     }
 
     func exitMode() {

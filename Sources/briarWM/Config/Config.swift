@@ -13,6 +13,7 @@ struct Config: Decodable, Equatable {
     var floating: FloatingRules
     var rules: [AppRule]
     var focusIndicator: FocusIndicator
+    var hud: Hud
 
     init() {
         modifier = "alt"
@@ -24,10 +25,11 @@ struct Config: Decodable, Equatable {
         floating = FloatingRules()
         rules = []
         focusIndicator = FocusIndicator()
+        hud = Hud()
     }
 
     enum CodingKeys: String, CodingKey {
-        case modifier, gaps, layout, exec, keybindings, modes, floating, rules
+        case modifier, gaps, layout, exec, keybindings, modes, floating, rules, hud
         case focusIndicator = "focus_indicator"
     }
 
@@ -46,6 +48,7 @@ struct Config: Decodable, Equatable {
         floating = try c.decodeIfPresent(FloatingRules.self, forKey: .floating) ?? d.floating
         rules = try c.decodeIfPresent([AppRule].self, forKey: .rules) ?? d.rules
         focusIndicator = try c.decodeIfPresent(FocusIndicator.self, forKey: .focusIndicator) ?? d.focusIndicator
+        hud = try c.decodeIfPresent(Hud.self, forKey: .hud) ?? d.hud
     }
 }
 
@@ -168,6 +171,54 @@ struct FocusIndicator: Decodable, Equatable {
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? d.opacity
         restOpacity = try c.decodeIfPresent(Double.self, forKey: .restOpacity) ?? d.restOpacity
         glow = try c.decodeIfPresent(CGFloat.self, forKey: .glow) ?? d.glow
+    }
+}
+
+/// The transient bezel HUD that flashes a mode change (float, zoom, split, workspace
+/// float, binding mode) at the lower center of the focused window's display, then fades
+/// out. Follows the `FocusIndicator` template (memberwise-init defaults + snake_case
+/// CodingKeys + the `let d = Self()` decoder). No color knob — the native `.hudWindow`
+/// material plus `labelColor` is the look; `enabled` gates only the bezel, not the
+/// menu-bar suffix (which always reflects real state). AppKit-free; `HudController` draws it.
+struct Hud: Decodable, Equatable {
+    var enabled: Bool
+    var fadeIn: Double         // seconds
+    var hold: Double           // how long the bezel stays fully visible
+    var fadeOut: Double
+    var bottomOffset: CGFloat  // points above the display's bottom edge
+    var fontSize: CGFloat
+
+    init(enabled: Bool = true,
+         fadeIn: Double = 0.12,
+         hold: Double = 1.0,
+         fadeOut: Double = 0.35,
+         bottomOffset: CGFloat = 120,
+         fontSize: CGFloat = 13) {
+        self.enabled = enabled
+        self.fadeIn = fadeIn
+        self.hold = hold
+        self.fadeOut = fadeOut
+        self.bottomOffset = bottomOffset
+        self.fontSize = fontSize
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, hold
+        case fadeIn = "fade_in"
+        case fadeOut = "fade_out"
+        case bottomOffset = "bottom_offset"
+        case fontSize = "font_size"
+    }
+
+    init(from decoder: Decoder) throws {
+        let d = Self()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        fadeIn = try c.decodeIfPresent(Double.self, forKey: .fadeIn) ?? d.fadeIn
+        hold = try c.decodeIfPresent(Double.self, forKey: .hold) ?? d.hold
+        fadeOut = try c.decodeIfPresent(Double.self, forKey: .fadeOut) ?? d.fadeOut
+        bottomOffset = try c.decodeIfPresent(CGFloat.self, forKey: .bottomOffset) ?? d.bottomOffset
+        fontSize = try c.decodeIfPresent(CGFloat.self, forKey: .fontSize) ?? d.fontSize
     }
 }
 

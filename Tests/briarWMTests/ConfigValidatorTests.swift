@@ -159,6 +159,17 @@ import Testing
         }
     }
 
+    @Test func negativeHudMetricsAreFlagged() {
+        var c = Config()
+        c.hud = Hud(fadeIn: -0.1, hold: -1, fadeOut: -0.2, bottomOffset: -5, fontSize: -3)
+        let issues = ConfigValidator.issues(in: c)
+        #expect(issues.contains { $0.contains("hud.fade_in") })
+        #expect(issues.contains { $0.contains("hud.hold") })
+        #expect(issues.contains { $0.contains("hud.fade_out") })
+        #expect(issues.contains { $0.contains("hud.bottom_offset") })
+        #expect(issues.contains { $0.contains("hud.font_size") })
+    }
+
     @Test func emptyRuleMatchIsFlagged() {
         var c = Config()
         c.rules = [AppRule(match: Match(bundleId: nil, titleRegex: nil), floating: true)]

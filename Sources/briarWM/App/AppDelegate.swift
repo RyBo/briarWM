@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var configWatcher: ConfigWatcher?
     private var permissionTimer: Timer?
     private var overlay: FocusOverlayController?
+    private var hud: HudController?
     /// SIGINT/SIGTERM sources kept alive for the process's lifetime so a `make run` Ctrl-C or a
     /// `kill` flushes the layout before exit. (`applicationWillTerminate` covers the AppKit path.)
     private var signalSources: [DispatchSourceSignal] = []
@@ -55,8 +56,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let overlay = FocusOverlayController(style: config.focusIndicator)
         manager.onFocusOverlayUpdate = { [weak overlay] frame, pulse in overlay?.update(frame: frame, pulse: pulse) }
-        manager.onConfigReloaded = { [weak overlay] cfg in overlay?.applyStyle(cfg.focusIndicator) }
         self.overlay = overlay
+
+        let hud = HudController(style: config.hud)
+        manager.onHudEvent = { [weak hud] event, visibleFrame in hud?.show(event, on: visibleFrame) }
+        self.hud = hud
+
+        manager.onConfigReloaded = { [weak overlay, weak hud] cfg in
+            overlay?.applyStyle(cfg.focusIndicator)
+            hud?.applyStyle(cfg.hud)
+        }
 
         manager.start()
         installTerminationHandlers()
