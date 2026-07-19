@@ -104,6 +104,14 @@ final class WindowManager: AXEventSink {
     var onFocusOverlayUpdate: ((CGRect?, Bool) -> Void)?
     /// Fired after a successful config reload so the overlay picks up new colors/metrics.
     var onConfigReloaded: ((Config) -> Void)?
+    /// Hands the bezel HUD a mode change plus the target display's visible Cocoa frame. Fired
+    /// from the mutation methods, which know the *resulting* state; see `emitHud`.
+    var onHudEvent: ((HudEvent, CGRect) -> Void)?
+    /// Deduplicated push of the derived sticky state (zoom / focused float / workspace float)
+    /// to the status item, recomputed at the retile funnel so implicit clears are caught.
+    var onStickyStateChanged: ((StickyState) -> Void)?
+    /// The last sticky state pushed — so `refreshStickyState` only fires on a real change.
+    private var lastStickyState: StickyState?
 
     init(config: Config) {
         self.config = config
@@ -423,6 +431,7 @@ final class WindowManager: AXEventSink {
         if let z = zoomedID, tree.contains(z) { registry.window(for: z)?.raise() }
         // Keep the halo tracking the focused window's new slot on resize/move/reflow.
         if let fid = focusedID, tree.contains(fid) { notifyFocusOverlay(pulse: false) }
+        refreshStickyState()   // catch implicit clears (zoom removed, workspace-float toggled) too
     }
 
     // MARK: - AXEventSink
@@ -617,7 +626,42 @@ final class WindowManager: AXEventSink {
 
     /// Push the current overlay state to the controller. `pulse` runs the border fade (real
     /// focus switch); position-only follows (retile/resize/Space change) pass `pulse: false`.
-    func notifyFocusOverlay(pulse: Bool) { onFocusOverlayUpdate?(focusOverlayFrame(), pulse) }
+    func notifyFocusOverlay(pulse: Bool) {
+        onFocusOverlayUpdate?(focusOverlayFrame(), pulse)
+        refreshStickyState()
+    }
+
+    // MARK: - HUD / sticky state
+
+    /// Flash a mode change on the bezel. Gated by `hud.enabled`. Resolves the display via
+    /// `displayForID(focusedID)` — not `focusedDisplay()`, which goes through the tree and
+    /// fails for a just-floated window (no longer in any tree) — and ships its visible frame
+    /// in Cocoa coords, ready for the panel with no AX flip.
+    func emitHud(_ event: HudEvent) {
+        guard config.hud.enabled else { return }
+        let display = focusedID.flatMap { displayForID($0) } ?? screens.displayIDs.first ?? 0
+        guard let screen = screens.screen(for: display) else { return }
+        onHudEvent?(event, screen.visibleFrame)
+    }
+
+    /// The sticky modes currently in effect (a window zoomed, the focused window floating, or
+    /// any visible desktop in workspace-float mode). Internal so the status item can seed from
+    /// it before the first push.
+    func currentStickyState() -> StickyState {
+        StickyState(zoomed: zoomedID != nil,
+                    focusedFloating: focusedID.map { registry.isFloating($0) } ?? false,
+                    workspaceFloating: trees.values.contains { isActive($0) && $0.workspaceFloat != nil })
+    }
+
+    /// Recompute the sticky state and push it only when it changed. Called from the retile
+    /// funnel and `notifyFocusOverlay`, so implicit clears (a zoomed window closed, a reconcile
+    /// re-float, a Space switch) reach the status item without any new plumbing.
+    func refreshStickyState() {
+        let state = currentStickyState()
+        guard state != lastStickyState else { return }
+        lastStickyState = state
+        onStickyStateChanged?(state)
+    }
 
     /// The window a focus recovery should land on, chosen deterministically: the frontmost
     /// app's AX-focused window if it's tiled on an active tree (what the user is really
