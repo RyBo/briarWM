@@ -96,6 +96,45 @@ import Foundation
         #expect(fi.fadeIn == 0.14)       // default
     }
 
+    @Test func hudUsesDefaultsWhenOmitted() throws {
+        let hud = try decode("{}").hud
+        #expect(hud.enabled)
+        #expect(hud.fadeIn == 0.12)
+        #expect(hud.hold == 1.0)
+        #expect(hud.fadeOut == 0.35)
+        #expect(hud.bottomOffset == 120)
+        #expect(hud.fontSize == 13)
+    }
+
+    @Test func hudDecodesFullSection() throws {
+        let c = try decode("""
+        {
+          "hud": {
+            "enabled": false, "fade_in": 0.2, "hold": 0.5,
+            "fade_out": 0.4, "bottom_offset": 80, "font_size": 15
+          }
+        }
+        """)
+        let hud = c.hud
+        #expect(!hud.enabled)
+        #expect(hud.fadeIn == 0.2)
+        #expect(hud.hold == 0.5)
+        #expect(hud.fadeOut == 0.4)
+        #expect(hud.bottomOffset == 80)
+        #expect(hud.fontSize == 15)
+    }
+
+    @Test func hudPartialSectionKeepsPerKeyDefaults() throws {
+        // Only `enabled` and `bottom_offset` overridden — the rest keep their defaults
+        // (snake_case keys must map).
+        let hud = try decode(#"{ "hud": { "enabled": false, "bottom_offset": 200 } }"#).hud
+        #expect(!hud.enabled)
+        #expect(hud.bottomOffset == 200)
+        #expect(hud.fadeIn == 0.12)   // default
+        #expect(hud.hold == 1.0)      // default
+        #expect(hud.fontSize == 13)   // default
+    }
+
     @Test func partialConfigMergesDefaults() throws {
         let c = try decode(#"{ "modifier": "cmd", "gaps": { "inner": 4 } }"#)
         #expect(c.modifier == "cmd")

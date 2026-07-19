@@ -46,6 +46,17 @@ enum ConfigValidator {
             out.append("focus_indicator.rest_opacity: \(fi.restOpacity) is outside [0, 1]")
         }
 
+        let hud = config.hud
+        for (name, value) in [("hud.fade_in", hud.fadeIn),
+                              ("hud.hold", hud.hold),
+                              ("hud.fade_out", hud.fadeOut)] where value < 0 {
+            out.append("\(name): \(value) is negative")
+        }
+        for (name, value) in [("hud.bottom_offset", hud.bottomOffset),
+                              ("hud.font_size", hud.fontSize)] where value < 0 {
+            out.append("\(name): \(value) is negative")
+        }
+
         out += bindingIssues(config.keybindings, context: "keybindings", config: config)
         for (name, binds) in config.modes.sorted(by: { $0.key < $1.key }) {
             out += bindingIssues(binds, context: "modes.\(name)", config: config)

@@ -25,6 +25,18 @@ focus_indicator:
                         # the pulse; >0 = a persistent border that pulses brighter on switch
   glow: 5.0             # soft same-color feather in points (0 = a crisp hard line)
 
+# Transient bezel that flashes a mode change (float, zoom, split, workspace float, binding
+# mode) at the lower center of the focused window's display, then fades out — like the
+# macOS volume bezel. `enabled` gates the bezel only; the menu-bar suffix always shows
+# sticky states (⛶ zoomed, ~ floating, ≈ desktop floating).
+# hud:
+#   enabled: true
+#   fade_in: 0.12         # bezel rise time, seconds
+#   hold: 1.0             # how long it stays fully visible before fading
+#   fade_out: 0.35        # bezel fall time, seconds
+#   bottom_offset: 120    # points above the display's bottom edge
+#   font_size: 13         # label point size
+
 layout:
   default_ratio: 0.5        # new split's share for the existing window (0–1)
   insert_at: after          # where a new window lands relative to the focused one
