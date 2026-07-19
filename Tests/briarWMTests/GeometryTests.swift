@@ -21,4 +21,21 @@ import Foundation
             #expect(rectApprox(twice, rect))
         }
     }
+
+    @Test func hudOriginCentersAboveBottom() {
+        let visible = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        let size = CGSize(width: 200, height: 40)
+        let origin = Geometry.hudOrigin(size: size, visibleFrame: visible, bottomOffset: 120)
+        #expect(approx(origin.x, visible.midX - size.width / 2))   // horizontally centered
+        #expect(approx(origin.y, 120))                             // offset above the bottom edge
+    }
+
+    @Test func hudOriginRespectsSecondaryDisplayFrame() {
+        // A secondary display whose visible frame doesn't start at the origin.
+        let visible = CGRect(x: -1920, y: 300, width: 1920, height: 1200)
+        let size = CGSize(width: 240, height: 44)
+        let origin = Geometry.hudOrigin(size: size, visibleFrame: visible, bottomOffset: 100)
+        #expect(approx(origin.x, visible.midX - size.width / 2))
+        #expect(approx(origin.y, 400))                             // minY (300) + offset (100)
+    }
 }

@@ -18,4 +18,13 @@ enum Geometry {
                width: rect.width,
                height: rect.height)
     }
+
+    /// Bottom-center origin (Cocoa coords) for a HUD panel of `size` inside `visibleFrame`,
+    /// sitting `bottomOffset` points above the frame's bottom edge — the classic macOS
+    /// volume-bezel zone. x is rounded so the panel lands on a whole point and its text
+    /// stays crisp.
+    static func hudOrigin(size: CGSize, visibleFrame: CGRect, bottomOffset: CGFloat) -> CGPoint {
+        CGPoint(x: (visibleFrame.midX - size.width / 2).rounded(),
+                y: visibleFrame.minY + bottomOffset)
+    }
 }
